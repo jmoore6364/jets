@@ -38,21 +38,18 @@ describe('ballistics', () => {
 
   it('rounds drop under gravity', () => {
     const sys = makeSystem();
-    let hitHigh = 0;
-    // Same aim, target sphere centered exactly on the boresight line at 800m:
-    // with drop, rounds should pass below a small sphere placed slightly high.
-    const target: HitTarget = {
-      id: 1,
-      position: new THREE.Vector3(0, 2.5, -800),
-      radiusM: 2,
-      onHit: () => { hitHigh++; }
-    };
-    for (let i = 0; i < 10; i++) {
-      sys.spawn(0, WWI_TWIN_MG, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3());
-    }
-    for (let t = 0; t < 2; t += 1 / 120) sys.update(1 / 120, [target], flatGround);
-    // 800m at 745 m/s ≈ 1.07s of flight → ~5.6m of drop: the high sphere is missed
-    expect(hitHigh).toBe(0);
+    const noSpread = { ...WWI_TWIN_MG, dispersionRad: 0 }; // deterministic trajectory
+    let hitBoresight = 0;
+    let hitDropped = 0;
+    // 800 m at 745 m/s ≈ 1.07 s of flight → ~5.6 m of drop.
+    const targets: HitTarget[] = [
+      { id: 1, position: new THREE.Vector3(0, 0, -800), radiusM: 2, onHit: () => { hitBoresight++; } },
+      { id: 2, position: new THREE.Vector3(0, -5.6, -800), radiusM: 2, onHit: () => { hitDropped++; } }
+    ];
+    sys.spawn(0, noSpread, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3());
+    for (let t = 0; t < 2; t += 1 / 120) sys.update(1 / 120, targets, flatGround);
+    expect(hitBoresight).toBe(0); // fell below the aim point
+    expect(hitDropped).toBe(1);   // ...by the predicted amount
   });
 
   it('projectiles never hit their owner', () => {
