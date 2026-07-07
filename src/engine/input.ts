@@ -13,6 +13,7 @@
  */
 import type { ControlInputs } from './flight/flightModel';
 import type { TouchControls } from '../ui/touch';
+import { viewportSize } from './viewport';
 
 export class InputManager {
   /** Set by the session on touch devices. */
@@ -41,6 +42,7 @@ export class InputManager {
   weaponToggleRequested = false;
   lockRequested = false;
   flareRequested = false;
+  muteToggleRequested = false;
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.repeat) return;
@@ -52,6 +54,7 @@ export class InputManager {
     if (e.code === 'KeyF') this.weaponToggleRequested = true;
     if (e.code === 'KeyT') this.lockRequested = true;
     if (e.code === 'KeyX') this.flareRequested = true;
+    if (e.code === 'KeyV') this.muteToggleRequested = true;
     if (e.code === 'Tab') { this.afterburner = !this.afterburner; e.preventDefault(); }
     // Direct throttle: 1-9 = 10-90%, 0 = 100%
     if (e.code.startsWith('Digit')) {
@@ -130,9 +133,10 @@ export class InputManager {
 
     // --- Mouse-fly ---
     if (this.mouseFly) {
-      const r = 0.33 * Math.min(window.innerWidth, window.innerHeight);
-      this.mouseStick.x = Math.max(-1, Math.min(1, (this.mousePx.x - window.innerWidth / 2) / r));
-      this.mouseStick.y = Math.max(-1, Math.min(1, (this.mousePx.y - window.innerHeight / 2) / r));
+      const vp = viewportSize();
+      const r = 0.33 * Math.min(vp.w, vp.h);
+      this.mouseStick.x = Math.max(-1, Math.min(1, (this.mousePx.x - vp.w / 2) / r));
+      this.mouseStick.y = Math.max(-1, Math.min(1, (this.mousePx.y - vp.h / 2) / r));
       const mx = InputManager.dead(this.mouseStick.x, 0.06);
       const my = InputManager.dead(this.mouseStick.y, 0.06);
       if (Math.abs(mx) > Math.abs(roll)) roll = mx;

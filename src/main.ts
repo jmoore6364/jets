@@ -5,6 +5,8 @@ import type { Mission } from './game/mission';
 import { MainMenu } from './ui/menu';
 import { CareerUI } from './ui/career';
 import { isTouchDevice } from './ui/touch';
+import { viewportSize, onViewportChange } from './engine/viewport';
+import { AudioEngine } from './engine/audio';
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -19,7 +21,12 @@ if (isTouchDevice()) {
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
+{
+  const { w, h } = viewportSize();
+  renderer.setSize(w, h);
+}
+
+const audio = new AudioEngine();
 
 let session: FlightSession | null = null;
 let menu: MainMenu | null = null;
@@ -49,14 +56,14 @@ function startSkirmish(spec: AircraftSpec): void {
   clearScreens();
   document.body.classList.remove('in-menu');
   careerMission = null;
-  session = new FlightSession(renderer, uiRoot, spec);
+  session = new FlightSession(renderer, uiRoot, spec, null, audio);
 }
 
 function startMission(mission: Mission, spec: AircraftSpec): void {
   clearScreens();
   document.body.classList.remove('in-menu');
   careerMission = mission;
-  session = new FlightSession(renderer, uiRoot, spec, mission);
+  session = new FlightSession(renderer, uiRoot, spec, mission, audio);
 }
 
 function endSession(): void {
@@ -75,9 +82,10 @@ function endSession(): void {
   }
 }
 
-window.addEventListener('resize', () => {
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  session?.resize(window.innerWidth, window.innerHeight);
+onViewportChange(() => {
+  const { w, h } = viewportSize();
+  renderer.setSize(w, h);
+  session?.resize(w, h);
 });
 
 let last = performance.now();

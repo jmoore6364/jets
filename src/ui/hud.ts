@@ -11,6 +11,7 @@
  */
 import type { FlightModel } from '../engine/flight/flightModel';
 import type { InputManager } from '../engine/input';
+import { viewportSize } from '../engine/viewport';
 
 const MS_TO_KTS = 1.94384;
 const MS_TO_MPH = 2.23694;
@@ -74,10 +75,13 @@ abstract class CanvasHud implements CockpitHud {
 
   resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.w = window.innerWidth;
-    this.h = window.innerHeight;
-    this.canvas.width = this.w * dpr;
-    this.canvas.height = this.h * dpr;
+    const { w, h } = viewportSize();
+    this.w = w;
+    this.h = h;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
+    this.canvas.width = w * dpr;
+    this.canvas.height = h * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -183,7 +187,7 @@ export class ModernHud extends CanvasHud {
 
     // ---- Heading tape ----
     const hdg = ((s.headingRad * R2D) + 360) % 360;
-    const tapeY = h * 0.075;
+    const tapeY = Math.max(h * 0.075, 42); // keep labels clear of notches on short screens
     const pxPerHdgDeg = w * 0.016;
     c.textAlign = 'center';
     for (let d = -25; d <= 25; d++) {
@@ -205,7 +209,7 @@ export class ModernHud extends CanvasHud {
 
     // ---- Airspeed (left box) ----
     // Clamp side columns inward on narrow screens so touch buttons stay clear.
-    const spdX = Math.max(w * 0.2, 250);
+    const spdX = Math.max(w * 0.2, 290);
     const altX = Math.min(w * 0.8, w - 160);
     const boxY = cy - 12;
     c.textAlign = 'right';

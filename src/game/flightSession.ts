@@ -17,6 +17,8 @@ import { Combatant, gunFor } from './combatant';
 import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
 import { MIG29 } from '../era/modern/aircraft';
 import { TouchControls, isTouchDevice } from '../ui/touch';
+import { viewportSize } from '../engine/viewport';
+import type { AudioEngine } from '../engine/audio';
 import type { Mission } from './mission';
 
 const PHYSICS_DT = 1 / 120;
@@ -88,7 +90,8 @@ export class FlightSession {
     private renderer: THREE.WebGLRenderer,
     uiRoot: HTMLElement,
     spec: AircraftSpec,
-    private mission: Mission | null = null
+    private mission: Mission | null = null,
+    private audio: AudioEngine | null = null
   ) {
     this.env = buildEnvironment(spec.era);
     this.scene.add(this.env.group);
@@ -98,7 +101,17 @@ export class FlightSession {
     this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.5, 40000);
     this.effects = new EffectsPool(this.scene);
     this.projectiles = new ProjectileSystem(this.scene);
-    if (spec.era === 'modern') this.missileSystem = new MissileSystem(this.scene, this.effects);
+    if (spec.era === 'modern') {
+      // Wrap the effects sink so missile detonations also reach the speakers.
+      const fx = {
+        spawn: this.effects.spawn.bind(this.effects),
+        explosion: (pos: THREE.Vector3) => {
+          this.effects.explosion(pos);
+          this.audio?.explosionAt(pos.distanceTo(this.player.model.position));
+        }
+      };
+      this.missileSystem = new MissileSystem(this.scene, fx);
+    }
 
     this.player = this.addCombatant(spec, 0);
     const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
@@ -235,6 +248,10 @@ export class FlightSession {
         this.respawnAll();
       }
     }
+    if (this.input.muteToggleRequested) {
+      this.input.muteToggleRequested = false;
+      this.audio?.toggleMute();
+    }
     this.handleWeaponInputs(dt);
 
     if (this.playerDown === 'flying') this.input.update(this.player.model.controls, dt);
@@ -272,6 +289,23 @@ export class FlightSession {
 
     this.updateCamera(dt);
     this.touch?.sync();
+
+    if (this.audio) {
+      const pc = this.player.model.controls;
+      const alive = this.playerDown === 'flying';
+      this.audio.update(dt, {
+        era: this.player.spec.era,
+        throttle: alive ? pc.throttle : 0,
+        speedMs: this.player.model.sample.speedMs,
+        afterburner: pc.afterburner && alive,
+        firingGun: alive && this.input.firing && this.selectedWeapon === 'gun' && this.player.gun.ammo > 0,
+        gunRateHz: this.player.gun.spec.rateHz,
+        growl: this.player.missileSpec && this.selectedWeapon === 'msl'
+          ? (this.lockedTarget ? 'lock' : 'seek')
+          : 'off',
+        inbound: !!this.missileSystem?.inboundFor(this.player.id)
+      });
+    }
 
     const p = this.player.model.position;
     const agl = p.y - this.env.terrainHeight(p.x, p.z);
@@ -322,6 +356,7 @@ export class FlightSession {
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(m.quaternion);
         this.missileSystem.launch(this.player.missileSpec!, this.player.id,
           m.position.clone().addScaledVector(fwd, 3), fwd, m.velocity, this.lockedTarget.id);
+        this.audio?.launch();
       }
     }
     this.prevFiring = firing;
@@ -370,6 +405,7 @@ export class FlightSession {
           this.aiMissileCooldown.set(c, 7 + Math.random() * 5);
           this.missileSystem.launch(c.missileSpec, c.id,
             c.model.position.clone().addScaledVector(fwd, 3), fwd, c.model.velocity, target.id);
+          if (c.model.position.distanceTo(this.player.model.position) < 2500) this.audio?.launch();
         }
       }
 
@@ -465,7 +501,11 @@ export class FlightSession {
   private onCombatantHit(c: Combatant, damage: number, by: number): void {
     const wasAlive = c.alive;
     c.hit(damage, by);
+    if (wasAlive && !c.alive) {
+      this.audio?.explosionAt(c.model.position.distanceTo(this.player.model.position));
+    }
     if (c === this.player) {
+      this.audio?.hitThud();
       if (!this.player.alive && this.playerDown === 'flying') {
         this.playerDown = 'shot-down';
         this.hud.showCrash(this.mission ? '✝ SHOT DOWN — press Esc' : '✝ SHOT DOWN — press R');
@@ -487,11 +527,13 @@ export class FlightSession {
       if (this.playerDown === 'flying') {
         this.playerDown = 'crashed';
         this.player.kill();
+        this.audio?.explosionAt(0);
         this.hud.showCrash(this.mission ? '✝ CRASHED — press Esc' : '✝ CRASHED — press R to fly again');
       }
       pos.y = ground + 1.5;
       c.model.velocity.setScalar(0);
     } else {
+      if (c.alive) this.audio?.explosionAt(pos.distanceTo(this.player.model.position));
       if (c.alive) {
         c.kill();
         if (c.side !== this.player.side) this.kills++;
@@ -549,12 +591,13 @@ export class FlightSession {
     // Nearest enemy designator (modern HUD only renders it)
     const enemy = this.lockedTarget ?? this.pickTarget(this.player);
     if (enemy) {
+      const vp = viewportSize();
       const v = enemy.model.position.clone().project(this.camera);
       const onScreen = v.z < 1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1;
       info.target = {
         onScreen,
-        sx: (v.x + 1) / 2 * window.innerWidth,
-        sy: (1 - v.y) / 2 * window.innerHeight,
+        sx: (v.x + 1) / 2 * vp.w,
+        sy: (1 - v.y) / 2 * vp.h,
         dirX: v.x, dirY: v.y, behind: v.z >= 1,
         rangeM: enemy.model.position.distanceTo(this.player.model.position),
         locked: enemy === this.lockedTarget
