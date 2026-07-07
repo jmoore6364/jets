@@ -40,6 +40,11 @@ npm run build    # production build in dist/
 **Gamepad**: left stick pitch/roll · right stick X rudder · RT/LT throttle ·
 A afterburner · X brake · Y camera.
 
+**Touch (phone/tablet, landscape recommended)**: right thumb anywhere on the
+right half is a floating stick (auto-coordinated rudder) · left-edge throttle
+slider · FIRE (hold), AB (toggle), BRK (hold) buttons · ☰ menu · CAM camera ·
+tap the banner to respawn.
+
 Both eras fly first-person by default: the F-16 gets a full glass HUD
 (pitch ladder, flight-path marker, heading tape, speed/alt/Mach/G/AoA, bank
 scale), the WWI birds get a painted cockpit — brass gauges, compass card,

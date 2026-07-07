@@ -71,7 +71,11 @@ abstract class CanvasHud implements CockpitHud {
     if (this.crashEl) return;
     this.crashEl = document.createElement('div');
     this.crashEl.className = 'crash-banner';
-    this.crashEl.textContent = text;
+    const touch = navigator.maxTouchPoints > 0;
+    this.crashEl.textContent = touch ? text.replace(/press R.*$/, 'tap to fly again') : text;
+    this.crashEl.addEventListener('pointerdown', () => {
+      this.input.respawnRequested = true;
+    });
     this.container.appendChild(this.crashEl);
   }
 
@@ -184,36 +188,39 @@ export class ModernHud extends CanvasHud {
     c.fillText(String(Math.round(hdg)).padStart(3, '0'), cx, tapeY + 23);
 
     // ---- Airspeed (left box) ----
+    // Clamp side columns inward on narrow screens so touch buttons stay clear.
+    const spdX = Math.max(w * 0.2, 250);
+    const altX = Math.min(w * 0.8, w - 160);
     const boxY = cy - 12;
     c.textAlign = 'right';
-    c.strokeRect(w * 0.2 - 78, boxY, 78, 26);
+    c.strokeRect(spdX - 78, boxY, 78, 26);
     c.font = '19px Consolas, Menlo, monospace';
-    c.fillText(String(Math.round(s.speedMs * MS_TO_KTS)), w * 0.2 - 8, boxY + 13);
+    c.fillText(String(Math.round(s.speedMs * MS_TO_KTS)), spdX - 8, boxY + 13);
     c.font = '14px Consolas, Menlo, monospace';
-    c.fillText(`M ${s.mach.toFixed(2)}`, w * 0.2 - 8, boxY + 42);
+    c.fillText(`M ${s.mach.toFixed(2)}`, spdX - 8, boxY + 42);
     const thr = Math.round(this.model.controls.throttle * 100);
-    c.fillText(`THR ${thr}${this.model.controls.afterburner ? ' AB' : ''}${this.model.controls.brake ? ' BRK' : ''}`, w * 0.2 - 8, boxY + 62);
-    c.fillText(`GUN ${combat.ammo}`, w * 0.2 - 8, boxY + 82);
+    c.fillText(`THR ${thr}${this.model.controls.afterburner ? ' AB' : ''}${this.model.controls.brake ? ' BRK' : ''}`, spdX - 8, boxY + 62);
+    c.fillText(`GUN ${combat.ammo}`, spdX - 8, boxY + 82);
 
     // ---- Altitude (right box) ----
     c.textAlign = 'left';
-    c.strokeRect(w * 0.8, boxY, 92, 26);
+    c.strokeRect(altX, boxY, 92, 26);
     c.font = '19px Consolas, Menlo, monospace';
-    c.fillText(String(Math.round(s.altitudeM * M_TO_FT)), w * 0.8 + 8, boxY + 13);
+    c.fillText(String(Math.round(s.altitudeM * M_TO_FT)), altX + 8, boxY + 13);
     c.font = '14px Consolas, Menlo, monospace';
     c.fillStyle = GREEN_DIM;
-    c.fillText(`R ${Math.max(0, Math.round(aglM * M_TO_FT))}`, w * 0.8 + 8, boxY + 42);
+    c.fillText(`R ${Math.max(0, Math.round(aglM * M_TO_FT))}`, altX + 8, boxY + 42);
     c.fillStyle = GREEN;
     const fpm = s.climbRateMs * M_TO_FT * 60;
-    c.fillText(`${fpm >= 0 ? '+' : ''}${Math.round(fpm / 10) * 10}`, w * 0.8 + 8, boxY + 62);
+    c.fillText(`${fpm >= 0 ? '+' : ''}${Math.round(fpm / 10) * 10}`, altX + 8, boxY + 62);
 
     // ---- G / AoA (upper left block) ----
     c.textAlign = 'left';
-    c.fillText(`G  ${s.gLoad.toFixed(1)}`, w * 0.2 - 78, boxY - 64);
+    c.fillText(`G  ${s.gLoad.toFixed(1)}`, spdX - 78, boxY - 64);
     c.fillStyle = GREEN_DIM;
-    c.fillText(`MX ${this.maxG.toFixed(1)}`, w * 0.2 - 78, boxY - 44);
+    c.fillText(`MX ${this.maxG.toFixed(1)}`, spdX - 78, boxY - 44);
     c.fillStyle = GREEN;
-    c.fillText(`α  ${(s.alphaRad * R2D).toFixed(1)}`, w * 0.2 - 78, boxY - 24);
+    c.fillText(`α  ${(s.alphaRad * R2D).toFixed(1)}`, spdX - 78, boxY - 24);
 
     // ---- Bank scale (bottom arc) ----
     const arcR = h * 0.17;

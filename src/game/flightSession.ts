@@ -13,6 +13,7 @@ import { AiPilot } from '../engine/ai/pilot';
 import { Combatant, gunFor } from './combatant';
 import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
 import { MIG29 } from '../era/modern/aircraft';
+import { TouchControls, isTouchDevice } from '../ui/touch';
 
 const PHYSICS_DT = 1 / 120;
 const SPAWN_ALT = { wwi: 600, modern: 1500 };
@@ -36,6 +37,7 @@ export class FlightSession {
 
   private hud: CockpitHud;
   private input = new InputManager();
+  private touch: TouchControls | null = null;
 
   private accumulator = 0;
   private cameraMode: 'chase' | 'cockpit' = 'cockpit';
@@ -69,6 +71,10 @@ export class FlightSession {
     this.hud = createHud(uiRoot, this.player.model, this.input);
     this.input.attach();
     this.input.throttle = spec.propulsion.kind === 'jet' ? 0.85 : 0.8;
+    if (isTouchDevice()) {
+      this.touch = new TouchControls(uiRoot, this.input);
+      this.input.touch = this.touch;
+    }
   }
 
   private respawnAll(): void {
@@ -147,6 +153,7 @@ export class FlightSession {
     }
 
     this.updateCamera(dt);
+    this.touch?.sync();
 
     const p = this.player.model.position;
     const agl = p.y - this.env.terrainHeight(p.x, p.z);
@@ -286,6 +293,7 @@ export class FlightSession {
 
   dispose(): void {
     this.input.detach();
+    this.touch?.dispose();
     this.hud.dispose();
     this.projectiles.dispose();
     this.effects.dispose();

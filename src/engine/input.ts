@@ -12,8 +12,11 @@
  *             RT/LT = throttle up/down · A = afterburner · X = brake
  */
 import type { ControlInputs } from './flight/flightModel';
+import type { TouchControls } from '../ui/touch';
 
 export class InputManager {
+  /** Set by the session on touch devices. */
+  touch: TouchControls | null = null;
   private keys = new Set<string>();
   private smoothed = { pitch: 0, roll: 0, yaw: 0 };
   throttle = 0.7;
@@ -130,6 +133,15 @@ export class InputManager {
       if (Math.abs(my) > Math.abs(pitch)) pitch = my; // mouse down = pull
     }
 
+    // --- Touch stick (auto-coordinated: thumb sticks have no rudder) ---
+    if (this.touch?.stick.active) {
+      const ts = this.touch.stick;
+      if (Math.abs(ts.x) > Math.abs(roll)) roll = ts.x;
+      if (Math.abs(ts.y) > Math.abs(pitch)) pitch = ts.y; // drag down = pull
+      yaw = roll * 0.3;
+    }
+    if (this.touch?.brake) brake = true;
+
     // --- Gamepad ---
     const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
     const pad = pads && Array.from(pads).find(p => p && p.connected);
@@ -164,6 +176,6 @@ export class InputManager {
     controls.afterburner = this.afterburner;
     controls.brake = brake;
 
-    this.firing = this.keys.has('Space') || (this.mouseFly && this.mouseDown) || padFire;
+    this.firing = this.keys.has('Space') || (this.mouseFly && this.mouseDown) || padFire || !!this.touch?.firing;
   }
 }
