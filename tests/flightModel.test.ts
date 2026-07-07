@@ -117,6 +117,39 @@ describe('flight behavior', () => {
     expect(maxG).toBeGreaterThan(3); // ...but it should still actually turn
   });
 
+  it('speedbrake bleeds energy faster (F-16)', () => {
+    const clean = freshModel(F16, 250);
+    clean.controls.throttle = 0;
+    run(clean, 6);
+
+    const braked = freshModel(F16, 250);
+    braked.controls.throttle = 0;
+    braked.controls.brake = true;
+    run(braked, 6);
+
+    expect(braked.sample.speedMs).toBeLessThan(clean.sample.speedMs - 5);
+  });
+
+  it('ignition blip kills rotary thrust (Camel)', () => {
+    const m = freshModel(SOPWITH_CAMEL);
+    m.controls.throttle = 1;
+    m.controls.brake = true; // blipping
+    run(m, 0.1);
+    expect(m.sample.thrustN).toBe(0);
+    m.controls.brake = false;
+    run(m, 0.1);
+    expect(m.sample.thrustN).toBeGreaterThan(500);
+  });
+
+  it('reports sane pitch/bank/mach in the sample', () => {
+    const m = freshModel(F16, 250);
+    run(m, 0.5);
+    expect(Math.abs(m.sample.bankRad)).toBeLessThan(0.2);
+    expect(Math.abs(m.sample.pitchRad)).toBeLessThan(0.3);
+    expect(m.sample.mach).toBeGreaterThan(0.6);
+    expect(m.sample.mach).toBeLessThan(1.0);
+  });
+
   it('WWI and modern aircraft both fly with the same engine code', () => {
     for (const spec of [FOKKER_DR1, SOPWITH_CAMEL, F16]) {
       const m = freshModel(spec);

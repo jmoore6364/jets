@@ -84,6 +84,14 @@ export interface AircraftSpec {
   /** Simple fly-by-wire alpha/G limiter (modern jets). */
   fbw?: { alphaLimitRad: number; gLimit: number };
 
+  /** Speedbrake drag increment at full deflection (modern). */
+  brakeDrag?: number;
+  /**
+   * Rotary engines had no throttle worth the name — pilots cut the ignition
+   * ("blipping") to manage power. When true, the brake key kills thrust instead.
+   */
+  blipSwitch?: boolean;
+
   propulsion: Propulsion;
 
   /** For UI / spawn logic. */

@@ -32,6 +32,7 @@ export const FOKKER_DR1: AircraftSpec = {
   rollDamp: 0.5,
   yawDamp: 0.35,
   engineAngularMomentum: 1300, // Oberursel rotary — the whole engine spins
+  blipSwitch: true,
   propulsion: { kind: 'prop', maxPowerW: 82000, propEfficiency: 0.75, maxStaticThrustN: 2600 },
   cruiseSpeedMs: 38
 };
@@ -64,6 +65,7 @@ export const SOPWITH_CAMEL: AircraftSpec = {
   rollDamp: 0.5,
   yawDamp: 0.32,
   engineAngularMomentum: 1550, // Clerget rotary — the Camel's killer quirk
+  blipSwitch: true,
   propulsion: { kind: 'prop', maxPowerW: 97000, propEfficiency: 0.75, maxStaticThrustN: 2900 },
   cruiseSpeedMs: 42
 };

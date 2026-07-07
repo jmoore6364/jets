@@ -8,7 +8,7 @@ import { FlightModel } from '../engine/flight/flightModel';
 import { InputManager } from '../engine/input';
 import { buildEnvironment, type EraEnvironment } from '../world/terrain';
 import { buildAircraftMesh } from '../world/aircraftMesh';
-import { Hud } from '../ui/hud';
+import { createHud, type CockpitHud } from '../ui/hud';
 
 const PHYSICS_DT = 1 / 120;
 const SPAWN_ALT = { wwi: 600, modern: 1500 };
@@ -19,11 +19,11 @@ export class FlightSession {
   private env: EraEnvironment;
   private model: FlightModel;
   private mesh: THREE.Group;
-  private hud: Hud;
+  private hud: CockpitHud;
   private input = new InputManager();
 
   private accumulator = 0;
-  private cameraMode: 'chase' | 'cockpit' = 'chase';
+  private cameraMode: 'chase' | 'cockpit' = 'cockpit';
   private chasePos = new THREE.Vector3();
   private crashed = false;
 
@@ -47,7 +47,7 @@ export class FlightSession {
     this.mesh = buildAircraftMesh(spec);
     this.scene.add(this.mesh);
 
-    this.hud = new Hud(uiRoot, this.model);
+    this.hud = createHud(uiRoot, this.model, this.input);
     this.input.attach();
     this.input.throttle = spec.propulsion.kind === 'jet' ? 0.85 : 0.8;
   }
@@ -63,6 +63,7 @@ export class FlightSession {
   resize(w: number, h: number): void {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.hud.resize();
   }
 
   /** Returns false when the session wants to exit to menu. */
@@ -99,6 +100,8 @@ export class FlightSession {
       }
     }
 
+    const agl = this.model.position.y - this.env.terrainHeight(this.model.position.x, this.model.position.z);
+
     // Sync visuals.
     this.mesh.position.copy(this.model.position);
     this.mesh.quaternion.copy(this.model.quaternion);
@@ -106,10 +109,11 @@ export class FlightSession {
     const ab = this.mesh.getObjectByName('abFlame');
     if (ab) ab.visible = this.model.controls.afterburner && !this.crashed;
     const prop = this.mesh.getObjectByName('propDisc');
-    if (prop) prop.rotation.z += dt * 40 * this.model.controls.throttle;
+    const blipped = this.model.spec.blipSwitch && this.model.controls.brake;
+    if (prop) prop.rotation.z += dt * 40 * (blipped ? 0.05 : this.model.controls.throttle);
 
     this.updateCamera(dt);
-    this.hud.update();
+    this.hud.update(agl, this.cameraMode === 'cockpit');
     this.renderer.render(this.scene, this.camera);
     return true;
   }

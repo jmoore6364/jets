@@ -33,6 +33,7 @@ export const F16: AircraftSpec = {
   yawDamp: 0.35,
   engineAngularMomentum: 0,
   fbw: { alphaLimitRad: 0.44, gLimit: 9 }, // 25° AoA, 9 G — Viper limits
+  brakeDrag: 0.055, // speedbrake
   propulsion: { kind: 'jet', milThrustN: 76000, abThrustN: 129000 },
   cruiseSpeedMs: 180
 };

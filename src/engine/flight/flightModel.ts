@@ -26,6 +26,8 @@ export interface ControlInputs {
   throttle: number;
   /** Afterburner engaged (jets). */
   afterburner: boolean;
+  /** Speedbrake (modern) / ignition blip (WWI rotary). */
+  brake: boolean;
 }
 
 const G0 = 9.80665;
@@ -64,9 +66,18 @@ export interface FlightSample {
   betaRad: number;
   gLoad: number;
   headingRad: number;
+  pitchRad: number;
+  bankRad: number;
+  mach: number;
   climbRateMs: number;
   stalled: boolean;
   thrustN: number;
+}
+
+/** Speed of sound in the ISA troposphere. */
+export function speedOfSound(altitudeM: number): number {
+  const t = Math.max(216.65, 288.15 - 0.0065 * Math.max(0, altitudeM));
+  return 340.29 * Math.sqrt(t / 288.15);
 }
 
 const _v = new THREE.Vector3();
@@ -82,11 +93,12 @@ export class FlightModel {
   /** Angular velocity in body frame, rad/s. */
   readonly angVelBody = new THREE.Vector3();
 
-  readonly controls: ControlInputs = { pitch: 0, roll: 0, yaw: 0, throttle: 0.7, afterburner: false };
+  readonly controls: ControlInputs = { pitch: 0, roll: 0, yaw: 0, throttle: 0.7, afterburner: false, brake: false };
 
   private lastSample: FlightSample = {
     speedMs: 0, altitudeM: 0, alphaRad: 0, betaRad: 0, gLoad: 1,
-    headingRad: 0, climbRateMs: 0, stalled: false, thrustN: 0
+    headingRad: 0, pitchRad: 0, bankRad: 0, mach: 0,
+    climbRateMs: 0, stalled: false, thrustN: 0
   };
 
   /** G rate-of-change, used by the FBW limiter for lead anticipation. */
@@ -149,7 +161,8 @@ export class FlightModel {
     const yawCmd = this.controls.yaw;
 
     // --- Aerodynamic forces (body frame) ---
-    const { cl, cd, stalled } = aeroCoefficients(s, alpha);
+    let { cl, cd, stalled } = aeroCoefficients(s, alpha);
+    if (this.controls.brake && s.brakeDrag) cd += s.brakeDrag;
     const vhat = vBody.clone().divideScalar(V);
 
     // Lift ⟂ velocity, in the aircraft's plane of symmetry.
@@ -165,7 +178,10 @@ export class FlightModel {
     let thrust = 0;
     const prop = s.propulsion;
     if (prop.kind === 'prop') {
-      thrust = Math.min(prop.maxStaticThrustN, (prop.maxPowerW * prop.propEfficiency * this.controls.throttle) / Math.max(V, 8));
+      // Ignition blip: rotary pilots cut the engine to manage power.
+      const blipped = s.blipSwitch && this.controls.brake;
+      const throttle = blipped ? 0 : this.controls.throttle;
+      thrust = Math.min(prop.maxStaticThrustN, (prop.maxPowerW * prop.propEfficiency * throttle) / Math.max(V, 8));
     } else {
       thrust = prop.milThrustN * this.controls.throttle;
       if (this.controls.afterburner && prop.abThrustN > 0) thrust = prop.abThrustN;
@@ -229,6 +245,8 @@ export class FlightModel {
     // --- Sample for HUD/AI ---
     this.gRate = clamp((gLoad - this.lastSample.gLoad) / dt, -60, 60);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
     this.lastSample = {
       speedMs: this.velocity.length(),
       altitudeM: this.position.y,
@@ -236,6 +254,9 @@ export class FlightModel {
       betaRad: beta,
       gLoad,
       headingRad: Math.atan2(fwd.x, -fwd.z),
+      pitchRad: Math.asin(clamp(fwd.y, -1, 1)),
+      bankRad: Math.atan2(-right.y, up.y),
+      mach: this.velocity.length() / speedOfSound(this.position.y),
       climbRateMs: this.velocity.y,
       stalled: stalled > 0.4,
       thrustN: thrust

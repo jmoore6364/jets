@@ -28,10 +28,21 @@ npm run build    # production build in dist/
 | `A` / `D` | Roll left / right |
 | `Q` / `E` | Rudder left / right |
 | `Shift` / `Ctrl` | Throttle up / down |
+| `1`–`9`, `0` | Direct throttle 10–100% |
 | `Tab` | Afterburner (jets) |
-| `C` | Chase / cockpit camera |
+| `B` | Speedbrake (jets) / ignition blip (WWI rotary) |
+| `M` | Mouse-fly toggle (cursor offset from center = stick) |
+| `C` | Cockpit / chase camera (cockpit is default) |
 | `R` | Respawn |
 | `Esc` | Back to menu |
+
+**Gamepad**: left stick pitch/roll · right stick X rudder · RT/LT throttle ·
+A afterburner · X brake · Y camera.
+
+Both eras fly first-person by default: the F-16 gets a full glass HUD
+(pitch ladder, flight-path marker, heading tape, speed/alt/Mach/G/AoA, bank
+scale), the WWI birds get a painted cockpit — brass gauges, compass card,
+slip ball, twin gun breeches, and a ring-and-bead gunsight.
 
 ## What flies today (Milestone 0)
 
