@@ -17,9 +17,25 @@ const MS_TO_MPH = 2.23694;
 const M_TO_FT = 3.28084;
 const R2D = 180 / Math.PI;
 
+export interface CombatInfo {
+  ammo: number;
+  kills: number;
+  /** Player airframe health, 0..1. */
+  hpFrac: number;
+  target?: {
+    onScreen: boolean;
+    sx: number;
+    sy: number;
+    dirX: number;
+    dirY: number;
+    behind: boolean;
+    rangeM: number;
+  };
+}
+
 export interface CockpitHud {
-  update(aglM: number, cockpitMode: boolean): void;
-  showCrash(): void;
+  update(aglM: number, cockpitMode: boolean, combat: CombatInfo): void;
+  showCrash(text?: string): void;
   clearCrash(): void;
   resize(): void;
   dispose(): void;
@@ -49,13 +65,13 @@ abstract class CanvasHud implements CockpitHud {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  abstract update(aglM: number, cockpitMode: boolean): void;
+  abstract update(aglM: number, cockpitMode: boolean, combat: CombatInfo): void;
 
-  showCrash(): void {
+  showCrash(text = '✝ CRASHED — press R to fly again'): void {
     if (this.crashEl) return;
     this.crashEl = document.createElement('div');
     this.crashEl.className = 'crash-banner';
-    this.crashEl.textContent = '✝ CRASHED — press R to fly again';
+    this.crashEl.textContent = text;
     this.container.appendChild(this.crashEl);
   }
 
@@ -78,7 +94,7 @@ const GREEN_DIM = 'rgba(80,255,130,0.55)';
 export class ModernHud extends CanvasHud {
   private maxG = 1;
 
-  update(aglM: number, cockpitMode: boolean): void {
+  update(aglM: number, cockpitMode: boolean, combat: CombatInfo): void {
     const c = this.ctx;
     const s = this.model.sample;
     const { w, h } = this;
@@ -177,6 +193,7 @@ export class ModernHud extends CanvasHud {
     c.fillText(`M ${s.mach.toFixed(2)}`, w * 0.2 - 8, boxY + 42);
     const thr = Math.round(this.model.controls.throttle * 100);
     c.fillText(`THR ${thr}${this.model.controls.afterburner ? ' AB' : ''}${this.model.controls.brake ? ' BRK' : ''}`, w * 0.2 - 8, boxY + 62);
+    c.fillText(`GUN ${combat.ammo}`, w * 0.2 - 8, boxY + 82);
 
     // ---- Altitude (right box) ----
     c.textAlign = 'left';
@@ -214,6 +231,46 @@ export class ModernHud extends CanvasHud {
     c.lineTo(cx + Math.cos(bp) * (arcR - 14), arcCY + Math.sin(bp) * (arcR - 14));
     c.stroke();
 
+    // ---- Combat: target designator / off-screen cue ----
+    const t = combat.target;
+    if (t) {
+      if (t.onScreen) {
+        c.strokeStyle = GREEN;
+        c.strokeRect(t.sx - 16, t.sy - 16, 32, 32);
+        c.font = '13px Consolas, Menlo, monospace';
+        c.textAlign = 'center';
+        c.fillStyle = GREEN;
+        c.fillText(`${Math.round(t.rangeM)}m`, t.sx, t.sy + 30);
+      } else {
+        // clamp a locator caret to the screen edge, pointing at the bandit
+        let dx = t.dirX, dy = -t.dirY;
+        if (t.behind) { dx = -dx; dy = -dy; }
+        const len = Math.max(Math.abs(dx), Math.abs(dy), 1e-4);
+        const ex = cx + (dx / len) * w * 0.42;
+        const ey = cy + (dy / len) * h * 0.40;
+        const ang = Math.atan2(dy, dx);
+        c.save();
+        c.translate(ex, ey);
+        c.rotate(ang);
+        c.fillStyle = GREEN_DIM;
+        c.beginPath();
+        c.moveTo(12, 0); c.lineTo(-6, -7); c.lineTo(-6, 7);
+        c.closePath();
+        c.fill();
+        c.restore();
+      }
+    }
+
+    // ---- Kills / airframe state (top right) ----
+    c.font = '14px Consolas, Menlo, monospace';
+    c.textAlign = 'right';
+    c.fillStyle = GREEN;
+    c.fillText(`KILLS ${combat.kills}`, w - 24, 28);
+    if (combat.hpFrac < 1) {
+      c.fillStyle = combat.hpFrac > 0.5 ? GREEN_DIM : 'rgba(255,90,60,0.9)';
+      c.fillText(`AIRFRAME ${Math.round(combat.hpFrac * 100)}%`, w - 24, 48);
+    }
+
     // ---- Warnings ----
     c.textAlign = 'center';
     if (s.stalled) {
@@ -237,7 +294,7 @@ export class ModernHud extends CanvasHud {
 /* ================================= WWI ================================= */
 
 export class WwiCockpit extends CanvasHud {
-  update(aglM: number, cockpitMode: boolean): void {
+  update(aglM: number, cockpitMode: boolean, combat: CombatInfo): void {
     const c = this.ctx;
     const s = this.model.sample;
     const { w, h } = this;
@@ -259,9 +316,10 @@ export class WwiCockpit extends CanvasHud {
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(
-        `ASI ${Math.round(mph)} mph    ALT ${Math.round(altFt)} ft    CMP ${String(Math.round(hdg)).padStart(3, '0')}°    RPM ${Math.round(rpm)}${s.stalled ? '    ⚠ STALL' : ''}${blipped ? '    BLIP' : ''}`,
+        `ASI ${Math.round(mph)} mph    ALT ${Math.round(altFt)} ft    CMP ${String(Math.round(hdg)).padStart(3, '0')}°    RPM ${Math.round(rpm)}    ROUNDS ${combat.ammo}${s.stalled ? '    ⚠ STALL' : ''}${blipped ? '    BLIP' : ''}`,
         w / 2, h - 20
       );
+      this.victories(combat.kills);
       return;
     }
 
@@ -340,6 +398,27 @@ export class WwiCockpit extends CanvasHud {
       c.textAlign = 'center';
       c.fillText('MOUSE FLY', w / 2, h - 8);
     }
+
+    // ---- Ammo plate + damage state on the panel ----
+    c.fillStyle = '#c9b98a';
+    c.font = `${Math.max(11, h * 0.016)}px Georgia, serif`;
+    c.textAlign = 'center';
+    c.fillText(`ROUNDS ${combat.ammo}`, w * 0.5, h * 0.985);
+    if (combat.hpFrac < 1) {
+      c.fillStyle = combat.hpFrac > 0.5 ? '#c9b98a' : '#ff7a5a';
+      c.fillText(combat.hpFrac > 0.5 ? 'AIRFRAME HOLED' : 'BADLY SHOT UP', w * 0.5, h * 0.755);
+    }
+    this.victories(combat.kills);
+  }
+
+  /** Victory tally, top right, Great War style. */
+  private victories(kills: number): void {
+    if (kills <= 0) return;
+    const c = this.ctx;
+    c.fillStyle = 'rgba(240,223,174,0.85)';
+    c.font = '16px Georgia, serif';
+    c.textAlign = 'right';
+    c.fillText(`VICTORIES  ${kills}`, this.w - 24, 30);
   }
 
   /** Brass-bezel gauge with a 270° sweep. */

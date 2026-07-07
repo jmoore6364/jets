@@ -28,15 +28,16 @@ export class MainMenu {
         </section>
       </div>
       <p class="controls-hint">
-        W/S pitch · A/D roll · Q/E rudder · Shift/Ctrl throttle · Tab afterburner ·
-        C camera · R respawn · Esc menu
+        W/S pitch · A/D roll · Q/E rudder · Space fire · Shift/Ctrl throttle ·
+        Tab afterburner · B brake/blip · M mouse-fly · C camera · R respawn · Esc menu
+        — a bandit patrols each map
       </p>`;
 
     const sections = this.root.querySelectorAll('.planes');
     const fill = (el: Element, list: AircraftSpec[]) => {
       for (const spec of list) {
         const btn = document.createElement('button');
-        btn.textContent = `FREE FLIGHT — ${spec.name}`;
+        btn.textContent = `SKIRMISH — ${spec.name}`;
         btn.addEventListener('click', () => onSelect(spec));
         el.appendChild(btn);
       }

@@ -38,4 +38,21 @@ export const F16: AircraftSpec = {
   cruiseSpeedMs: 180
 };
 
+/** Bandit only for now — flyable once the campaign opens up. */
+export const MIG29: AircraftSpec = {
+  ...F16,
+  id: 'mig29',
+  name: 'MiG-29 Fulcrum',
+  massKg: 12500,
+  inertia: { pitch: 79000, yaw: 89000, roll: 14500 },
+  wingAreaM2: 38,
+  wingSpanM: 11.36,
+  chordM: 3.35,
+  aspectRatio: 3.4,
+  cd0: 0.021,
+  fbw: { alphaLimitRad: 0.42, gLimit: 9 },
+  propulsion: { kind: 'jet', milThrustN: 99000, abThrustN: 163000 },
+  cruiseSpeedMs: 175
+};
+
 export const MODERN_AIRCRAFT = [F16];

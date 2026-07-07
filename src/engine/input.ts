@@ -27,6 +27,10 @@ export class InputManager {
 
   private padButtonsPrev: boolean[] = [];
 
+  /** Trigger state: Space, left mouse (in mouse-fly), or gamepad RB. */
+  firing = false;
+  private mouseDown = false;
+
   /** One-shot events consumed by the session. */
   cameraToggleRequested = false;
   respawnRequested = false;
@@ -56,17 +60,30 @@ export class InputManager {
     this.mousePx.y = e.clientY;
   };
 
+  private onMouseDown = (e: MouseEvent) => {
+    if (e.button === 0) this.mouseDown = true;
+  };
+
+  private onMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) this.mouseDown = false;
+  };
+
   attach(): void {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
+    window.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
   }
 
   detach(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('mousemove', this.onMouseMove);
+    window.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
     this.keys.clear();
+    this.mouseDown = false;
   }
 
   private axis(neg: string[], pos: string[]): number {
@@ -100,6 +117,7 @@ export class InputManager {
     let roll = this.smoothed.roll;
     let yaw = this.smoothed.yaw;
     let brake = this.keys.has('KeyB');
+    let padFire = false;
 
     // --- Mouse-fly ---
     if (this.mouseFly) {
@@ -131,6 +149,7 @@ export class InputManager {
       if (pressed(0) && !this.padButtonsPrev[0]) this.afterburner = !this.afterburner; // A
       if (pressed(2)) brake = true;                                                    // X
       if (pressed(3) && !this.padButtonsPrev[3]) this.cameraToggleRequested = true;    // Y
+      if (pressed(5)) padFire = true;                                                  // RB
       this.padButtonsPrev = pad.buttons.map(b => b.pressed);
     }
 
@@ -144,5 +163,7 @@ export class InputManager {
     controls.throttle = this.throttle;
     controls.afterburner = this.afterburner;
     controls.brake = brake;
+
+    this.firing = this.keys.has('Space') || (this.mouseFly && this.mouseDown) || padFire;
   }
 }

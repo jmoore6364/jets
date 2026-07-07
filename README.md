@@ -27,6 +27,7 @@ npm run build    # production build in dist/
 | `W` / `S` | Pitch down / up (pull) |
 | `A` / `D` | Roll left / right |
 | `Q` / `E` | Rudder left / right |
+| `Space` / left click | **Fire guns** |
 | `Shift` / `Ctrl` | Throttle up / down |
 | `1`–`9`, `0` | Direct throttle 10–100% |
 | `Tab` | Afterburner (jets) |
@@ -44,12 +45,17 @@ Both eras fly first-person by default: the F-16 gets a full glass HUD
 scale), the WWI birds get a painted cockpit — brass gauges, compass card,
 slip ball, twin gun breeches, and a ring-and-bead gunsight.
 
-## What flies today (Milestone 0)
+## What flies today (Milestones 0–1)
 
 - **1917** — Fokker Dr.I, Sopwith Camel: rotary-engine gyroscopic coupling,
-  adverse yaw, low-speed stall/spin behavior, Flanders farmland.
+  adverse yaw, low-speed stall/spin behavior, Flanders farmland. Twin .303s
+  with tracer ballistics; fight a bandit flown by the AI.
 - **2026** — F-16C: FBW alpha/G limiter (25° / 9 G) with lead anticipation,
-  afterburner, desert canyons for low-level runs.
+  afterburner, speedbrake, desert canyons. M61 Vulcan; a MiG-29 patrols the map.
+- **Combat** — real projectile physics (muzzle velocity + gravity drop),
+  damage with smoke/fire, kill explosions, respawning bandits, kill tally.
+  The AI flies the *same flight model* through the same control inputs —
+  lead pursuit, break turns when threatened, terrain avoidance.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full vision and roadmap.
 

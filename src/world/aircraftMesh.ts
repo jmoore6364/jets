@@ -61,9 +61,9 @@ function buildWwi(spec: AircraftSpec): THREE.Group {
 }
 
 /** Modern: pointed nose, blended body, swept delta-ish wing, single fin. */
-function buildModern(): THREE.Group {
+function buildModern(spec: AircraftSpec): THREE.Group {
   const g = new THREE.Group();
-  const gray = 0x8b95a1;
+  const gray = spec.id === 'mig29' ? 0x5d6b75 : 0x8b95a1; // Fulcrum wears darker camo
 
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.5, 10, 8), mat(gray));
   body.rotation.x = Math.PI / 2;
@@ -126,5 +126,5 @@ function buildModern(): THREE.Group {
 }
 
 export function buildAircraftMesh(spec: AircraftSpec): THREE.Group {
-  return spec.era === 'wwi' ? buildWwi(spec) : buildModern();
+  return spec.era === 'wwi' ? buildWwi(spec) : buildModern(spec);
 }
