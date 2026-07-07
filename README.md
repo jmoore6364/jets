@@ -1,0 +1,58 @@
+# PROJECT JETS
+
+**A Century of Air Combat — One Bloodline.**
+
+Two games in one: a Red Baron-style WWI campaign and a Falcon 4-inspired modern-era
+campaign with Top Gun-flavored missions — connected by a *dynasty*: the family of
+aviators you fly across a hundred years. Your 1917 ace founds the line; their
+descendant straps into a Viper.
+
+Built with Three.js + TypeScript. One shared 6-DOF flight model powers every
+aircraft in every era — a Fokker Dr.I and an F-16 are the same physics with
+different numbers.
+
+## Run it
+
+```bash
+npm install
+npm run dev      # open the printed localhost URL
+npm test         # flight-model physics tests
+npm run build    # production build in dist/
+```
+
+## Controls
+
+| Input | Action |
+|---|---|
+| `W` / `S` | Pitch down / up (pull) |
+| `A` / `D` | Roll left / right |
+| `Q` / `E` | Rudder left / right |
+| `Shift` / `Ctrl` | Throttle up / down |
+| `Tab` | Afterburner (jets) |
+| `C` | Chase / cockpit camera |
+| `R` | Respawn |
+| `Esc` | Back to menu |
+
+## What flies today (Milestone 0)
+
+- **1917** — Fokker Dr.I, Sopwith Camel: rotary-engine gyroscopic coupling,
+  adverse yaw, low-speed stall/spin behavior, Flanders farmland.
+- **2026** — F-16C: FBW alpha/G limiter (25° / 9 G) with lead anticipation,
+  afterburner, desert canyons for low-level runs.
+
+See [docs/DESIGN.md](docs/DESIGN.md) for the full vision and roadmap.
+
+## Layout
+
+```
+src/
+  engine/flight/   shared 6-DOF flight model + AircraftSpec data contract
+  engine/input.ts  smoothed keyboard controls
+  era/wwi/         WWI aircraft data
+  era/modern/      modern aircraft data
+  world/           procedural terrain (era palettes), placeholder aircraft meshes
+  game/            flight session: physics loop, cameras, crash/respawn
+  ui/              menu + era-specific HUDs
+  career/          dynasty data model (meta-narrative spine, WIP)
+tests/             physics sanity tests (sign conventions, stall, FBW, gyroscopics)
+```

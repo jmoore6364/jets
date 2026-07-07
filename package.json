@@ -1,0 +1,23 @@
+{
+  "name": "jets",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A Century of Air Combat — WWI and modern-era flight sim with a linked dynasty career",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "playwright": "^1.61.1",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  }
+}

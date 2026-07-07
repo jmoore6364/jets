@@ -1,0 +1,80 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e14; }
+
+#scene { position: fixed; inset: 0; display: block; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#ui > * { pointer-events: auto; }
+
+/* ---------- Main menu ---------- */
+body.in-menu #scene { filter: brightness(0.35); }
+
+.menu {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1.4rem;
+  background: radial-gradient(ellipse at center, rgba(10,16,28,0.55), rgba(4,7,12,0.92));
+  color: #dfe6ee;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  text-align: center;
+}
+.menu h1 {
+  font-size: clamp(2.4rem, 7vw, 4.6rem);
+  letter-spacing: 0.35em; font-weight: 200;
+  text-shadow: 0 0 24px rgba(120,180,255,0.4);
+}
+.menu .tagline { letter-spacing: 0.3em; font-size: 0.75rem; color: #8fa3bd; }
+.eras { display: flex; gap: 2.5rem; flex-wrap: wrap; justify-content: center; }
+.era {
+  padding: 1.4rem 1.8rem; min-width: 300px;
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 6px;
+  background: rgba(255,255,255,0.03);
+}
+.era h2 { font-size: 0.95rem; letter-spacing: 0.22em; margin-bottom: 1rem; font-weight: 400; }
+.era-wwi h2 { color: #d8b46a; }
+.era-modern h2 { color: #7ec8ff; }
+.era button {
+  display: block; width: 100%; margin: 0.45rem 0; padding: 0.65rem 1rem;
+  background: rgba(255,255,255,0.06); color: #e8eef5;
+  border: 1px solid rgba(255,255,255,0.22); border-radius: 4px;
+  font-family: inherit; font-size: 0.8rem; letter-spacing: 0.12em;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.era button:hover:not(:disabled) { background: rgba(130,190,255,0.18); border-color: #7ec8ff; }
+.era-wwi button:hover:not(:disabled) { background: rgba(216,180,106,0.18); border-color: #d8b46a; }
+.era button.locked { opacity: 0.35; cursor: default; font-style: italic; }
+.controls-hint { font-size: 0.7rem; color: #6b7a8d; letter-spacing: 0.08em; }
+
+/* ---------- HUDs ---------- */
+.hud { position: absolute; inset: 0; pointer-events: none; }
+
+.hud-modern { font-family: 'Consolas', 'Menlo', monospace; color: #4dff7c; text-shadow: 0 0 6px rgba(77,255,124,0.7); }
+.hud-modern .hud-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.1rem; }
+.hud-modern .hud-left, .hud-modern .hud-right {
+  position: absolute; top: 46%; font-size: 1.6rem;
+  padding: 0.2rem 0.6rem; border: 1px solid rgba(77,255,124,0.55);
+}
+.hud-modern .hud-left { left: 18%; }
+.hud-modern .hud-right { right: 18%; }
+.hud-modern small { display: block; font-size: 0.6rem; text-align: center; }
+.hud-modern .hud-top { position: absolute; top: 6%; left: 50%; transform: translateX(-50%); font-size: 1.2rem; }
+.hud-modern .hud-bottom { position: absolute; bottom: 7%; left: 50%; transform: translateX(-50%); font-size: 0.95rem; }
+
+.hud-wwi { font-family: Georgia, 'Times New Roman', serif; color: #f0e2c4; }
+.hud-wwi .gauges {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; justify-content: center; gap: 2.2rem;
+  padding: 0.7rem 0;
+  background: linear-gradient(to top, rgba(38,28,16,0.88), rgba(38,28,16,0));
+  font-size: 1rem; letter-spacing: 0.06em;
+}
+.hud-wwi .gauge b { color: #ffd98a; font-size: 1.15rem; }
+
+.warn { color: #ff5544; font-weight: bold; text-shadow: 0 0 8px rgba(255,60,40,0.8); }
+
+.crash-banner {
+  position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 1.5rem; letter-spacing: 0.15em; color: #ff6655;
+  background: rgba(10,5,5,0.75); padding: 1rem 2.2rem; border: 1px solid #ff6655;
+  font-family: inherit;
+}
