@@ -57,7 +57,7 @@ Sign conventions are locked by unit tests (`tests/flightModel.test.ts`).
 |---|---|
 | **M0 ✅** | Scaffold, shared flight model, free flight in both eras, physics tests |
 | **M1 ✅** | Combat core: gun ballistics with tracers, damage/kill model, dogfight AI (pursue/evade/terrain-avoid), 1v1 skirmish in both eras |
-| **M2** | WWI career vertical slice: squadron roster, mission generator (patrol/balloon/escort), medals, perma-death |
+| **M2 ✅** | WWI career vertical slice: dynasty founding, side choice (RFC/Luftstreitkräfte), mission generator (patrol/balloon/escort), confirmed victories, medals, promotions, perma-death with heirs |
 | **M3** | Modern combat: radar modes, RWR, IR/radar missiles, chaff/flare; Top Gun scripted mission framework |
 | **M4** | Dynasty meta-layer: legacy track, cross-era unlocks, family archive UI |
 | **M5** | Presentation: real models, cockpits, sound, music, replay camera |

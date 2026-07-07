@@ -50,7 +50,16 @@ Both eras fly first-person by default: the F-16 gets a full glass HUD
 scale), the WWI birds get a painted cockpit — brass gauges, compass card,
 slip ball, twin gun breeches, and a ring-and-bead gunsight.
 
-## What flies today (Milestones 0–1)
+## What flies today (Milestones 0–2)
+
+**WWI Career** — found your dynasty, name your pilot, choose your side
+(RFC Sopwith Camel or Jasta Fokker Dr.I), and fly generated missions over
+the Western Front: dawn patrols, balloon attacks, two-seater escorts.
+Victories are confirmed, medals and promotions follow the real decoration
+ladders (Military Cross → VC, Iron Cross → Pour le Mérite), the campaign
+calendar marches on from April 1917 — and death is permanent. When a pilot
+falls, the next of kin takes their place and the dynasty endures.
+Saved in your browser between sessions.
 
 - **1917** — Fokker Dr.I, Sopwith Camel: rotary-engine gyroscopic coupling,
   adverse yaw, low-speed stall/spin behavior, Flanders farmland. Twin .303s

@@ -1,6 +1,8 @@
 /**
- * A skirmish session: you, an era-appropriate bandit flown by the AI on the
- * same physics, guns with real ballistics, damage, kills, and respawns.
+ * A flight session: skirmish (endless respawning bandit) or a career
+ * mission (patrol / balloon bust / escort) with objective tracking.
+ * Every aircraft — player, bandits, the escorted two-seater — flies the
+ * same physics through the same control inputs.
  */
 import * as THREE from 'three';
 import type { AircraftSpec } from '../engine/flight/aircraft';
@@ -9,17 +11,34 @@ import { buildEnvironment, type EraEnvironment } from '../world/terrain';
 import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
-import { AiPilot } from '../engine/ai/pilot';
+import { AiPilot, RoutePilot } from '../engine/ai/pilot';
 import { Combatant, gunFor } from './combatant';
 import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
 import { MIG29 } from '../era/modern/aircraft';
 import { TouchControls, isTouchDevice } from '../ui/touch';
+import type { Mission } from './mission';
 
 const PHYSICS_DT = 1 / 120;
 const SPAWN_ALT = { wwi: 600, modern: 1500 };
 
-function banditSpecFor(player: AircraftSpec): AircraftSpec {
+interface Pilot {
+  wantsFire: boolean;
+  update(dt: number, me: Combatant['model'], target: Combatant['model'] | null, aglM: number): void;
+}
+
+export interface SessionResult {
+  kills: number;
+  survived: boolean;
+  /** null = skirmish (no objective). */
+  missionComplete: boolean | null;
+}
+
+function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
   if (player.era === 'modern') return MIG29;
+  return player.id === 'fokker-dr1' ? SOPWITH_CAMEL : FOKKER_DR1;
+}
+
+function wwiEnemyOf(player: AircraftSpec): AircraftSpec {
   return player.id === 'fokker-dr1' ? SOPWITH_CAMEL : FOKKER_DR1;
 }
 
@@ -30,10 +49,15 @@ export class FlightSession {
   private effects: EffectsPool;
   private projectiles: ProjectileSystem;
 
+  private combatants: Combatant[] = [];
+  private pilots = new Map<Combatant, Pilot>();
   private player: Combatant;
-  private bandit: Combatant;
-  private banditAi: AiPilot;
+  private escortee: Combatant | null = null;
   private banditRespawnTimer = 0;
+  private nextId = 0;
+
+  /** Balloon objective (balloon missions). */
+  private balloon: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean } | null = null;
 
   private hud: CockpitHud;
   private input = new InputManager();
@@ -44,13 +68,16 @@ export class FlightSession {
   private chasePos = new THREE.Vector3();
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
+  private missionState: 'none' | 'running' | 'complete' | 'failed' = 'none';
+  private completeAnnounced = false;
 
   onExit: (() => void) | null = null;
 
   constructor(
     private renderer: THREE.WebGLRenderer,
     uiRoot: HTMLElement,
-    spec: AircraftSpec
+    spec: AircraftSpec,
+    private mission: Mission | null = null
   ) {
     this.env = buildEnvironment(spec.era);
     this.scene.add(this.env.group);
@@ -61,12 +88,16 @@ export class FlightSession {
     this.effects = new EffectsPool(this.scene);
     this.projectiles = new ProjectileSystem(this.scene);
 
-    this.player = new Combatant(0, this.scene, spec, this.effects);
-    const banditSpec = banditSpecFor(spec);
-    this.bandit = new Combatant(1, this.scene, banditSpec, this.effects);
-    this.banditAi = new AiPilot(gunFor(banditSpec), 0.65);
+    this.player = this.addCombatant(spec, 0);
+    const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
+    this.player.respawn(0, alt, 0, spec.cruiseSpeedMs * 1.1, 0);
 
-    this.respawnAll();
+    if (mission) {
+      this.missionState = 'running';
+      this.setupMission(mission);
+    } else {
+      this.spawnSkirmishBandit();
+    }
 
     this.hud = createHud(uiRoot, this.player.model, this.input);
     this.input.attach();
@@ -77,24 +108,94 @@ export class FlightSession {
     }
   }
 
-  private respawnAll(): void {
-    const era = this.player.spec.era;
-    const alt = SPAWN_ALT[era];
-    const ground = this.env.terrainHeight(0, 0);
-    this.player.respawn(0, ground + alt, 0, this.player.spec.cruiseSpeedMs * 1.1, 0);
-    this.spawnBandit();
-    this.playerDown = 'flying';
+  private addCombatant(spec: AircraftSpec, side: number): Combatant {
+    const c = new Combatant(this.nextId++, this.scene, spec, this.effects, side);
+    this.combatants.push(c);
+    return c;
   }
 
-  private spawnBandit(): void {
-    const era = this.player.spec.era;
-    const dist = era === 'modern' ? 4000 : 1200;
+  // ---------------- Mission setup ----------------
+
+  private setupMission(m: Mission): void {
+    const enemySpec = wwiEnemyOf(this.player.spec);
+    const groundAtZone = this.env.terrainHeight(m.zone.x, m.zone.z);
+
+    for (let i = 0; i < m.enemyCount; i++) {
+      const e = this.addCombatant(enemySpec, 1);
+      const ox = (Math.random() - 0.5) * 800, oz = (Math.random() - 0.5) * 800;
+      e.respawn(m.zone.x + ox, groundAtZone + 500 + Math.random() * 300, m.zone.z + oz,
+        enemySpec.cruiseSpeedMs, Math.random() * Math.PI * 2);
+      this.pilots.set(e, new AiPilot(gunFor(enemySpec), 0.6 + Math.random() * 0.15));
+    }
+
+    if (m.type === 'balloon' && m.balloonAltM) {
+      this.balloon = {
+        mesh: this.buildBalloonMesh(),
+        pos: new THREE.Vector3(m.zone.x, groundAtZone + m.balloonAltM, m.zone.z),
+        hp: 8,
+        alive: true
+      };
+      this.balloon.mesh.position.copy(this.balloon.pos);
+      this.scene.add(this.balloon.mesh);
+    }
+
+    if (m.type === 'escort' && m.route) {
+      const friendSpec = this.player.spec; // stand-in two-seater until real models
+      const f = this.addCombatant(friendSpec, 0);
+      f.respawn(-300, this.env.terrainHeight(-300, 200) + 450, 200, friendSpec.cruiseSpeedMs * 0.95, 0);
+      const route = m.route.map(w =>
+        new THREE.Vector3(w.x, this.env.terrainHeight(w.x, w.z) + 450, w.z));
+      this.pilots.set(f, new RoutePilot(route, 0.7));
+      this.escortee = f;
+    }
+  }
+
+  private buildBalloonMesh(): THREE.Group {
+    const g = new THREE.Group();
+    const envelope = new THREE.Mesh(
+      new THREE.SphereGeometry(9, 12, 10),
+      new THREE.MeshLambertMaterial({ color: 0xb8b090, flatShading: true })
+    );
+    envelope.scale.set(1, 0.75, 1.4);
+    g.add(envelope);
+    const basket = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 1.2, 1.6),
+      new THREE.MeshLambertMaterial({ color: 0x4a3b28 })
+    );
+    basket.position.y = -10;
+    g.add(basket);
+    return g;
+  }
+
+  private spawnSkirmishBandit(): void {
+    const spec = skirmishBanditFor(this.player.spec);
+    let bandit = this.combatants.find(c => c !== this.player);
+    if (!bandit) {
+      bandit = this.addCombatant(spec, 1);
+      this.pilots.set(bandit, new AiPilot(gunFor(spec), 0.65));
+    }
+    const dist = spec.era === 'modern' ? 4000 : 1200;
     const p = this.player.model.position;
     const bearing = Math.random() * Math.PI * 2;
     const x = p.x + Math.sin(bearing) * dist;
     const z = p.z - Math.cos(bearing) * dist;
     const alt = Math.max(p.y + (Math.random() - 0.3) * 400, this.env.terrainHeight(x, z) + 400);
-    this.bandit.respawn(x, alt, z, this.bandit.spec.cruiseSpeedMs, Math.random() * Math.PI * 2);
+    bandit.respawn(x, alt, z, spec.cruiseSpeedMs, Math.random() * Math.PI * 2);
+  }
+
+  private respawnAll(): void {
+    const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[this.player.spec.era];
+    this.player.respawn(0, alt, 0, this.player.spec.cruiseSpeedMs * 1.1, 0);
+    this.playerDown = 'flying';
+    if (!this.mission) this.spawnSkirmishBandit();
+  }
+
+  getResult(): SessionResult {
+    return {
+      kills: this.kills,
+      survived: this.playerDown === 'flying',
+      missionComplete: this.mission ? this.missionState === 'complete' : null
+    };
   }
 
   resize(w: number, h: number): void {
@@ -103,7 +204,8 @@ export class FlightSession {
     this.hud.resize();
   }
 
-  /** Returns false when the session wants to exit to menu. */
+  // ---------------- Frame update ----------------
+
   update(dt: number): boolean {
     if (this.input.menuRequested) {
       this.input.menuRequested = false;
@@ -115,34 +217,37 @@ export class FlightSession {
     }
     if (this.input.respawnRequested) {
       this.input.respawnRequested = false;
-      this.hud.clearCrash();
-      this.respawnAll();
+      // In a career mission, death is final — no mid-mission respawns.
+      if (!this.mission) {
+        this.hud.clearCrash();
+        this.respawnAll();
+      }
     }
 
-    const flying = this.playerDown === 'flying';
-    if (flying) this.input.update(this.player.model.controls, dt);
+    if (this.playerDown === 'flying') this.input.update(this.player.model.controls, dt);
 
-    // --- Fixed-step physics for both airframes + weapons ---
     this.accumulator += Math.min(dt, 0.1);
     while (this.accumulator >= PHYSICS_DT) {
       this.stepPhysics(PHYSICS_DT);
       this.accumulator -= PHYSICS_DT;
     }
 
-    // Bandit lifecycle
-    if (!this.bandit.alive) {
-      this.banditRespawnTimer -= dt;
-      if (this.banditRespawnTimer <= 0 && this.bandit.mesh.visible === false) {
-        this.spawnBandit();
+    // Skirmish bandit lifecycle
+    if (!this.mission) {
+      const bandit = this.combatants.find(c => c !== this.player);
+      if (bandit && !bandit.alive) {
+        this.banditRespawnTimer -= dt;
+        if (this.banditRespawnTimer <= 0) this.spawnSkirmishBandit();
       }
     }
 
-    this.player.updateEffects(dt);
-    this.bandit.updateEffects(dt);
+    this.evaluateMission();
+
+    for (const c of this.combatants) c.updateEffects(dt);
     this.effects.update(dt);
 
-    // --- Visual sync ---
-    for (const c of [this.player, this.bandit]) {
+    // Visual sync
+    for (const c of this.combatants) {
       c.mesh.position.copy(c.model.position);
       c.mesh.quaternion.copy(c.model.quaternion);
       const ab = c.mesh.getObjectByName('abFlame');
@@ -163,61 +268,83 @@ export class FlightSession {
   }
 
   private stepPhysics(dt: number): void {
-    // AI thinks, then both airframes fly the same equations.
-    if (this.bandit.alive) {
-      const bp = this.bandit.model.position;
-      const bAgl = bp.y - this.env.terrainHeight(bp.x, bp.z);
-      this.banditAi.update(dt, this.bandit.model, this.player.alive ? this.player.model : null, bAgl);
+    // AI decisions
+    for (const c of this.combatants) {
+      const pilot = this.pilots.get(c);
+      if (!pilot || !c.alive) continue;
+      const pos = c.model.position;
+      const agl = pos.y - this.env.terrainHeight(pos.x, pos.z);
+      pilot.update(dt, c.model, this.pickTarget(c)?.model ?? null, agl);
     }
-    this.player.model.step(dt);
-    this.bandit.model.step(dt);
+
+    for (const c of this.combatants) c.model.step(dt);
 
     // Guns
-    const pm = this.player.model;
-    this.player.gun.update(
-      dt, this.playerDown === 'flying' && this.input.firing, this.player.id,
-      pm.position, pm.quaternion, pm.velocity, this.projectiles
-    );
-    const bm = this.bandit.model;
-    this.bandit.gun.update(
-      dt, this.bandit.alive && this.banditAi.wantsFire, this.bandit.id,
-      bm.position, bm.quaternion, bm.velocity, this.projectiles
-    );
+    for (const c of this.combatants) {
+      const pilot = this.pilots.get(c);
+      const firing = c === this.player
+        ? this.playerDown === 'flying' && this.input.firing
+        : !!pilot && c.alive && pilot.wantsFire;
+      const m = c.model;
+      c.gun.update(dt, firing, c.id, m.position, m.quaternion, m.velocity, this.projectiles);
+    }
 
-    // Projectiles vs airframes
+    // Projectiles vs airframes + balloon
     const targets: HitTarget[] = [];
-    if (this.player.alive) {
+    for (const c of this.combatants) {
+      if (!c.alive) continue;
       targets.push({
-        id: this.player.id, position: pm.position, radiusM: this.player.radiusM,
-        onHit: (d, by) => this.onPlayerHit(d, by)
+        id: c.id, position: c.model.position, radiusM: c.radiusM,
+        onHit: (d, by) => this.onCombatantHit(c, d, by)
       });
     }
-    if (this.bandit.alive) {
+    if (this.balloon?.alive) {
+      const b = this.balloon;
       targets.push({
-        id: this.bandit.id, position: bm.position, radiusM: this.bandit.radiusM,
-        onHit: (d, by) => this.onBanditHit(d, by)
+        id: 999, position: b.pos, radiusM: 11,
+        onHit: d => {
+          b.hp -= d;
+          this.effects.spawn(b.pos.clone(), { size: 3, growth: 5, life: 0.5, color: 0xffcc66, opacity: 0.8 });
+          if (b.hp <= 0 && b.alive) {
+            b.alive = false;
+            this.effects.explosion(b.pos.clone());
+            this.effects.spawn(b.pos.clone(), { size: 20, growth: 25, life: 1.4, color: 0xff6a10, opacity: 0.9 });
+            b.mesh.visible = false;
+            this.kills++;
+          }
+        }
       });
     }
     this.projectiles.update(dt, targets, this.env.terrainHeight);
 
-    // Terrain
-    this.groundCheck(this.player);
-    this.groundCheck(this.bandit);
+    for (const c of this.combatants) this.groundCheck(c);
   }
 
-  private onPlayerHit(damage: number, by: number): void {
-    this.player.hit(damage, by);
-    if (!this.player.alive && this.playerDown === 'flying') {
-      this.playerDown = 'shot-down';
-      this.hud.showCrash('✝ SHOT DOWN — press R');
+  /** Nearest living combatant on the other side. */
+  private pickTarget(me: Combatant): Combatant | null {
+    let best: Combatant | null = null;
+    let bestD = Infinity;
+    for (const c of this.combatants) {
+      if (c === me || !c.alive || c.side === me.side) continue;
+      if (c === this.player && this.playerDown !== 'flying') continue;
+      const d = me.model.position.distanceToSquared(c.model.position);
+      if (d < bestD) { bestD = d; best = c; }
     }
+    return best;
   }
 
-  private onBanditHit(damage: number, by: number): void {
-    const wasAlive = this.bandit.alive;
-    this.bandit.hit(damage, by);
-    if (wasAlive && !this.bandit.alive) {
-      this.kills++;
+  private onCombatantHit(c: Combatant, damage: number, by: number): void {
+    const wasAlive = c.alive;
+    c.hit(damage, by);
+    if (c === this.player) {
+      if (!this.player.alive && this.playerDown === 'flying') {
+        this.playerDown = 'shot-down';
+        this.hud.showCrash(this.mission ? '✝ SHOT DOWN — press Esc' : '✝ SHOT DOWN — press R');
+      }
+      return;
+    }
+    if (wasAlive && !c.alive && c.side !== this.player.side) {
+      if (c.lastHitBy === this.player.id) this.kills++;
       this.banditRespawnTimer = 7;
     }
   }
@@ -231,21 +358,55 @@ export class FlightSession {
       if (this.playerDown === 'flying') {
         this.playerDown = 'crashed';
         this.player.kill();
-        this.hud.showCrash('✝ CRASHED — press R to fly again');
+        this.hud.showCrash(this.mission ? '✝ CRASHED — press Esc' : '✝ CRASHED — press R to fly again');
       }
-      // pin the wreck
       pos.y = ground + 1.5;
       c.model.velocity.setScalar(0);
     } else {
       if (c.alive) {
         c.kill();
-        this.kills++; // a bandit flown into the dirt is still your kill
+        if (c.side !== this.player.side) this.kills++;
         this.banditRespawnTimer = 7;
       }
       this.effects.explosion(pos.clone());
       c.mesh.visible = false;
-      pos.y = ground - 100; // park the model out of sight until respawn
+      pos.y = ground - 100;
       c.model.velocity.setScalar(0);
+    }
+  }
+
+  // ---------------- Mission logic ----------------
+
+  private evaluateMission(): void {
+    if (!this.mission || this.missionState !== 'running') return;
+    const m = this.mission;
+
+    if (this.playerDown !== 'flying') {
+      this.missionState = 'failed';
+      return;
+    }
+
+    const enemiesDown = this.combatants.filter(c => c.side === 1).every(c => !c.alive);
+
+    let complete = false;
+    if (m.type === 'patrol') complete = enemiesDown;
+    else if (m.type === 'balloon') complete = !!this.balloon && !this.balloon.alive;
+    else if (m.type === 'escort') {
+      if (this.escortee && !this.escortee.alive) {
+        this.missionState = 'failed';
+        this.hud.showCrash('THE TWO-SEATER IS DOWN — press Esc');
+        return;
+      }
+      const rp = this.escortee ? this.pilots.get(this.escortee) as RoutePilot : null;
+      complete = !!rp?.finished;
+    }
+
+    if (complete) {
+      this.missionState = 'complete';
+      if (!this.completeAnnounced) {
+        this.completeAnnounced = true;
+        this.hud.showCrash('✔ MISSION COMPLETE — press Esc to return');
+      }
     }
   }
 
@@ -255,16 +416,40 @@ export class FlightSession {
       kills: this.kills,
       hpFrac: Math.max(0, this.player.hp / this.player.maxHp)
     };
-    if (this.bandit.alive) {
-      const v = this.bandit.model.position.clone().project(this.camera);
+
+    // Nearest enemy designator (modern HUD only renders it)
+    const enemy = this.pickTarget(this.player);
+    if (enemy) {
+      const v = enemy.model.position.clone().project(this.camera);
       const onScreen = v.z < 1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1;
       info.target = {
         onScreen,
         sx: (v.x + 1) / 2 * window.innerWidth,
         sy: (1 - v.y) / 2 * window.innerHeight,
-        // direction for the off-screen cue
         dirX: v.x, dirY: v.y, behind: v.z >= 1,
-        rangeM: this.bandit.model.position.distanceTo(this.player.model.position)
+        rangeM: enemy.model.position.distanceTo(this.player.model.position)
+      };
+    }
+
+    if (this.mission) {
+      const m = this.mission;
+      const p = this.player.model.position;
+      // Objective point: escort follows the two-seater, others the zone.
+      const ox = m.type === 'escort' && this.escortee?.alive ? this.escortee.model.position.x : m.zone.x;
+      const oz = m.type === 'escort' && this.escortee?.alive ? this.escortee.model.position.z : m.zone.z;
+      const bearing = Math.atan2(ox - p.x, -(oz - p.z));
+      const dist = Math.hypot(ox - p.x, oz - p.z);
+      const label =
+        this.missionState === 'complete' ? 'Mission complete — return when ready' :
+        this.missionState === 'failed' ? 'Mission failed' :
+        m.type === 'patrol' ? `Patrol: clear the sector (${this.combatants.filter(c => c.side === 1 && c.alive).length} hostile)` :
+        m.type === 'balloon' ? 'Destroy the observation balloon' :
+        'Escort the two-seater';
+      info.mission = {
+        text: label,
+        bearingRad: bearing,
+        distanceM: dist,
+        state: this.missionState
       };
     }
     return info;
@@ -297,8 +482,7 @@ export class FlightSession {
     this.hud.dispose();
     this.projectiles.dispose();
     this.effects.dispose();
-    this.player.dispose();
-    this.bandit.dispose();
+    for (const c of this.combatants) c.dispose();
     this.scene.traverse(obj => {
       const mesh = obj as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();

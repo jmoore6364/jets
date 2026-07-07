@@ -32,7 +32,9 @@ export class Combatant {
     readonly id: number,
     scene: THREE.Scene,
     spec: AircraftSpec,
-    private effects: EffectsPool
+    private effects: EffectsPool,
+    /** 0 = player's side, 1 = enemy. */
+    readonly side: number = 1
   ) {
     this.model = new FlightModel(spec);
     this.mesh = buildAircraftMesh(spec);

@@ -31,6 +31,12 @@ export interface CombatInfo {
     behind: boolean;
     rangeM: number;
   };
+  mission?: {
+    text: string;
+    bearingRad: number;
+    distanceM: number;
+    state: 'none' | 'running' | 'complete' | 'failed';
+  };
 }
 
 export interface CockpitHud {
@@ -326,6 +332,12 @@ export class WwiCockpit extends CanvasHud {
         `ASI ${Math.round(mph)} mph    ALT ${Math.round(altFt)} ft    CMP ${String(Math.round(hdg)).padStart(3, '0')}°    RPM ${Math.round(rpm)}    ROUNDS ${combat.ammo}${s.stalled ? '    ⚠ STALL' : ''}${blipped ? '    BLIP' : ''}`,
         w / 2, h - 20
       );
+      if (combat.mission) {
+        const m = combat.mission;
+        c.font = '15px Georgia, serif';
+        c.fillStyle = m.state === 'failed' ? '#ff7a5a' : m.state === 'complete' ? '#b8e6a0' : '#f0e2c4';
+        c.fillText(m.state === 'running' ? `${m.text} — ${(m.distanceM / 1000).toFixed(1)} km` : m.text, w / 2, 24);
+      }
       this.victories(combat.kills);
       return;
     }
@@ -380,11 +392,22 @@ export class WwiCockpit extends CanvasHud {
     // ---- Gauges ----
     const gaugeY = py + (h - py) * 0.44;
     const R = Math.min(h * 0.085, w * 0.055);
+    const wpBearingDeg = combat.mission ? combat.mission.bearingRad * R2D : undefined;
     this.gauge(w * 0.20, gaugeY, R, 'M.P.H.', 0, 160, mph, 20);
     this.gauge(w * 0.36, gaugeY, R, 'ALT ×1000', 0, 20, altFt / 1000, 5);
-    this.compass(w * 0.5, gaugeY + R * 0.15, R * 0.92, hdg);
+    this.compass(w * 0.5, gaugeY + R * 0.15, R * 0.92, hdg, wpBearingDeg);
     this.gauge(w * 0.64, gaugeY, R, 'R.P.M. ×100', 0, 16, rpm / 100, 4);
     this.slipBall(w * 0.80, gaugeY, R, s.betaRad);
+
+    // ---- Mission orders (top center) ----
+    if (combat.mission) {
+      const m = combat.mission;
+      c.textAlign = 'center';
+      c.font = `${Math.max(13, h * 0.022)}px Georgia, serif`;
+      c.fillStyle = m.state === 'failed' ? '#ff7a5a' : m.state === 'complete' ? '#b8e6a0' : '#f0e2c4';
+      const km = (m.distanceM / 1000).toFixed(1);
+      c.fillText(m.state === 'running' ? `${m.text} — ${km} km` : m.text, w / 2, h * 0.05);
+    }
 
     // ---- Warnings ----
     if (s.stalled && Math.floor(performance.now() / 300) % 2 === 0) {
@@ -470,7 +493,7 @@ export class WwiCockpit extends CanvasHud {
   }
 
   /** Rotating compass card, lubber line fixed at top. */
-  private compass(x: number, y: number, r: number, hdgDeg: number): void {
+  private compass(x: number, y: number, r: number, hdgDeg: number, wpBearingDeg?: number): void {
     const c = this.ctx;
     const bz = c.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.2, x, y, r * 1.15);
     bz.addColorStop(0, '#d8b46a'); bz.addColorStop(1, '#6d5423');
@@ -505,6 +528,20 @@ export class WwiCockpit extends CanvasHud {
     c.strokeStyle = '#ffd98a';
     c.lineWidth = 3;
     c.beginPath(); c.moveTo(x, y - r * 0.98); c.lineTo(x, y - r * 0.72); c.stroke();
+    // waypoint needle (mission objective bearing)
+    if (wpBearingDeg !== undefined) {
+      const a = ((wpBearingDeg - hdgDeg) - 90) * Math.PI / 180;
+      c.strokeStyle = '#e8b64a';
+      c.lineWidth = 2.5;
+      c.beginPath();
+      c.moveTo(x + Math.cos(a) * r * 0.2, y + Math.sin(a) * r * 0.2);
+      c.lineTo(x + Math.cos(a) * r * 0.85, y + Math.sin(a) * r * 0.85);
+      c.stroke();
+      c.fillStyle = '#e8b64a';
+      c.beginPath();
+      c.arc(x + Math.cos(a) * r * 0.85, y + Math.sin(a) * r * 0.85, 2.5, 0, Math.PI * 2);
+      c.fill();
+    }
   }
 
   /** Curved-tube slip indicator. */

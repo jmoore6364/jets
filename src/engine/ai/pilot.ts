@@ -12,6 +12,60 @@ import type { GunSpec } from '../combat/projectiles';
 const _dir = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
+/** Roll the lift vector onto a world-space point, then pull. Shared steering core. */
+export function steerToward(me: FlightModel, point: THREE.Vector3, gain = 1): void {
+  const c = me.controls;
+  _q.copy(me.quaternion).invert();
+  const dirB = _dir.copy(point).sub(me.position).normalize().applyQuaternion(_q);
+  const rollErr = Math.atan2(dirB.x, dirB.y);
+  const alignment = Math.cos(rollErr);
+  c.roll = THREE.MathUtils.clamp(rollErr * 1.6 * gain, -1, 1);
+  c.pitch = THREE.MathUtils.clamp(Math.atan2(dirB.y, -dirB.z) * 3.5 * gain * Math.max(0.15, alignment), -1, 1);
+  c.yaw = THREE.MathUtils.clamp(dirB.x * 0.6, -0.4, 0.4);
+}
+
+/**
+ * Flies a fixed route at cruise power — the reconnaissance two-seater
+ * placidly holding course while the war happens around it.
+ */
+export class RoutePilot {
+  readonly wantsFire = false;
+  private index = 0;
+  finished = false;
+
+  constructor(private route: THREE.Vector3[], private cruiseThrottle = 0.75) {}
+
+  update(dt: number, me: FlightModel, _target: FlightModel | null, aglM: number): void {
+    void dt; void _target;
+    const c = me.controls;
+    c.throttle = this.cruiseThrottle;
+    c.afterburner = false;
+    c.brake = false;
+
+    if (aglM < 150) { // even the placid two-seater avoids hills
+      c.roll = THREE.MathUtils.clamp(-me.sample.bankRad * 2.5, -1, 1);
+      c.pitch = 0.8;
+      return;
+    }
+
+    if (this.finished) {
+      // Orbit the last waypoint gently.
+      c.roll = THREE.MathUtils.clamp((0.3 - me.sample.bankRad) * 1.5, -1, 1);
+      c.pitch = THREE.MathUtils.clamp((0 - me.sample.pitchRad) * 2 + 0.06, -1, 1);
+      return;
+    }
+
+    const wp = this.route[this.index];
+    const flat = wp.clone().setY(me.position.y); // hold altitude, steer laterally
+    steerToward(me, flat, 0.7);
+    const dist = Math.hypot(wp.x - me.position.x, wp.z - me.position.z);
+    if (dist < 300) {
+      this.index++;
+      if (this.index >= this.route.length) this.finished = true;
+    }
+  }
+}
+
 export class AiPilot {
   /** Set true by update() when the AI wants the trigger down. */
   wantsFire = false;

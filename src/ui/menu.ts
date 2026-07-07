@@ -10,7 +10,7 @@ import { isTouchDevice } from './touch';
 export class MainMenu {
   private root: HTMLElement;
 
-  constructor(container: HTMLElement, onSelect: (spec: AircraftSpec) => void) {
+  constructor(container: HTMLElement, onSelect: (spec: AircraftSpec) => void, onCareer: () => void) {
     this.root = document.createElement('div');
     this.root.className = 'menu';
     this.root.innerHTML = `
@@ -20,7 +20,7 @@ export class MainMenu {
         <section class="era era-wwi">
           <h2>1917 · THE GREAT WAR</h2>
           <div class="planes"></div>
-          <button class="locked" disabled>CAREER — Milestone 2</button>
+          <button class="career-btn">CAREER — YOUR DYNASTY BEGINS</button>
         </section>
         <section class="era era-modern">
           <h2>2026 · MODERN ERA</h2>
@@ -44,6 +44,7 @@ export class MainMenu {
     };
     fill(sections[0], WWI_AIRCRAFT);
     fill(sections[1], MODERN_AIRCRAFT);
+    this.root.querySelector('.career-btn')!.addEventListener('click', onCareer);
 
     container.appendChild(this.root);
   }
