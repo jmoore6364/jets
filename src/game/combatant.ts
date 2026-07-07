@@ -7,6 +7,7 @@ import type { AircraftSpec } from '../engine/flight/aircraft';
 import { FlightModel } from '../engine/flight/flightModel';
 import { buildAircraftMesh } from '../world/aircraftMesh';
 import { Gun, WWI_TWIN_MG, M61_VULCAN, type GunSpec } from '../engine/combat/projectiles';
+import { AIM9, R73, type MissileSpec } from '../engine/combat/missiles';
 import type { EffectsPool } from '../world/effects';
 
 export function gunFor(spec: AircraftSpec): GunSpec {
@@ -26,6 +27,11 @@ export class Combatant {
   alive = true;
   lastHitBy = -1;
 
+  /** IR missile loadout (modern era only). */
+  readonly missileSpec: MissileSpec | null;
+  missiles = 0;
+  flares = 0;
+
   private smokeTimer = 0;
 
   constructor(
@@ -42,6 +48,15 @@ export class Combatant {
     this.gun = new Gun(gunFor(spec));
     this.maxHp = hitPointsFor(spec);
     this.hp = this.maxHp;
+    this.missileSpec = spec.era === 'modern' ? (spec.id === 'mig29' ? R73 : AIM9) : null;
+    this.rearm();
+  }
+
+  private rearm(): void {
+    if (this.missileSpec) {
+      this.missiles = 4;
+      this.flares = 30;
+    }
   }
 
   get spec(): AircraftSpec {
@@ -76,6 +91,7 @@ export class Combatant {
     this.hp = this.maxHp;
     this.lastHitBy = -1;
     this.gun.reload();
+    this.rearm();
     this.model.spawn(x, altitude, z, speed, heading);
     this.mesh.visible = true;
   }

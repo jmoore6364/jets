@@ -30,7 +30,17 @@ export interface CombatInfo {
     dirY: number;
     behind: boolean;
     rangeM: number;
+    locked?: boolean;
   };
+  weapon?: {
+    kind: 'gun' | 'msl';
+    name: string;
+    missiles: number;
+    flares: number;
+    locked: boolean;
+  };
+  /** Inbound missile warning (screen-projected direction). */
+  threat?: { dirX: number; dirY: number; behind: boolean };
   mission?: {
     text: string;
     bearingRad: number;
@@ -206,7 +216,19 @@ export class ModernHud extends CanvasHud {
     c.fillText(`M ${s.mach.toFixed(2)}`, spdX - 8, boxY + 42);
     const thr = Math.round(this.model.controls.throttle * 100);
     c.fillText(`THR ${thr}${this.model.controls.afterburner ? ' AB' : ''}${this.model.controls.brake ? ' BRK' : ''}`, spdX - 8, boxY + 62);
-    c.fillText(`GUN ${combat.ammo}`, spdX - 8, boxY + 82);
+    if (combat.weapon) {
+      const wp = combat.weapon;
+      const sel = wp.kind === 'gun' ? `GUN ${combat.ammo}` : `${wp.name} ×${wp.missiles}`;
+      c.fillText(sel, spdX - 8, boxY + 82);
+      c.fillStyle = GREEN_DIM;
+      c.fillText(`FLR ${wp.flares}`, spdX - 8, boxY + 102);
+      c.fillStyle = GREEN;
+      if (wp.kind === 'msl' && !wp.locked) {
+        c.fillText('NO LOCK', spdX - 8, boxY + 122);
+      }
+    } else {
+      c.fillText(`GUN ${combat.ammo}`, spdX - 8, boxY + 82);
+    }
 
     // ---- Altitude (right box) ----
     c.textAlign = 'left';
@@ -250,6 +272,15 @@ export class ModernHud extends CanvasHud {
       if (t.onScreen) {
         c.strokeStyle = GREEN;
         c.strokeRect(t.sx - 16, t.sy - 16, 32, 32);
+        if (t.locked) {
+          // Solid seeker circle + LOCK: the Sidewinder sees them.
+          c.beginPath();
+          c.arc(t.sx, t.sy, 26, 0, Math.PI * 2);
+          c.stroke();
+          c.font = '12px Consolas, Menlo, monospace';
+          c.textAlign = 'center';
+          c.fillText('LOCK', t.sx, t.sy - 34);
+        }
         c.font = '13px Consolas, Menlo, monospace';
         c.textAlign = 'center';
         c.fillStyle = GREEN;
@@ -290,6 +321,29 @@ export class ModernHud extends CanvasHud {
       c.fillStyle = 'rgba(255,70,60,0.95)';
       c.font = 'bold 22px Consolas, Menlo, monospace';
       if (Math.floor(performance.now() / 250) % 2 === 0) c.fillText('STALL', cx, cy - h * 0.2);
+    }
+    if (combat.threat) {
+      const flash = Math.floor(performance.now() / 180) % 2 === 0;
+      if (flash) {
+        c.fillStyle = 'rgba(255,60,50,0.95)';
+        c.font = 'bold 24px Consolas, Menlo, monospace';
+        c.fillText('MISSILE', cx, cy + h * 0.16);
+      }
+      // red caret toward the inbound missile
+      let dx = combat.threat.dirX, dy = -combat.threat.dirY;
+      if (combat.threat.behind) { dx = -dx; dy = -dy; }
+      const len = Math.max(Math.abs(dx), Math.abs(dy), 1e-4);
+      const ex = cx + (dx / len) * w * 0.34;
+      const ey = cy + (dy / len) * h * 0.32;
+      c.save();
+      c.translate(ex, ey);
+      c.rotate(Math.atan2(dy, dx));
+      c.fillStyle = 'rgba(255,70,50,0.9)';
+      c.beginPath();
+      c.moveTo(14, 0); c.lineTo(-7, -8); c.lineTo(-7, 8);
+      c.closePath();
+      c.fill();
+      c.restore();
     }
     if (this.input.mouseFly) {
       c.fillStyle = GREEN_DIM;

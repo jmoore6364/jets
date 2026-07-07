@@ -11,6 +11,7 @@ import { buildEnvironment, type EraEnvironment } from '../world/terrain';
 import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
+import { MissileSystem, type MissileTargetView } from '../engine/combat/missiles';
 import { AiPilot, RoutePilot } from '../engine/ai/pilot';
 import { Combatant, gunFor } from './combatant';
 import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
@@ -68,6 +69,16 @@ export class FlightSession {
   private chasePos = new THREE.Vector3();
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
+
+  // Modern weapons state
+  private missileSystem: MissileSystem | null = null;
+  private selectedWeapon: 'gun' | 'msl' = 'gun';
+  private lockedTarget: Combatant | null = null;
+  private launchCooldown = 0;
+  private prevFiring = false;
+  private flareCooldown = 0;
+  private aiMissileCooldown = new Map<Combatant, number>();
+  private aiFlareCooldown = new Map<Combatant, number>();
   private missionState: 'none' | 'running' | 'complete' | 'failed' = 'none';
   private completeAnnounced = false;
 
@@ -87,6 +98,7 @@ export class FlightSession {
     this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.5, 40000);
     this.effects = new EffectsPool(this.scene);
     this.projectiles = new ProjectileSystem(this.scene);
+    if (spec.era === 'modern') this.missileSystem = new MissileSystem(this.scene, this.effects);
 
     this.player = this.addCombatant(spec, 0);
     const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
@@ -223,6 +235,7 @@ export class FlightSession {
         this.respawnAll();
       }
     }
+    this.handleWeaponInputs(dt);
 
     if (this.playerDown === 'flying') this.input.update(this.player.model.controls, dt);
 
@@ -267,6 +280,110 @@ export class FlightSession {
     return true;
   }
 
+  // ---------------- Modern weapons ----------------
+
+  private handleWeaponInputs(dt: number): void {
+    this.launchCooldown -= dt;
+    this.flareCooldown -= dt;
+
+    if (this.input.weaponToggleRequested) {
+      this.input.weaponToggleRequested = false;
+      if (this.player.missileSpec) {
+        this.selectedWeapon = this.selectedWeapon === 'gun' ? 'msl' : 'gun';
+      }
+    }
+    if (this.input.lockRequested) {
+      this.input.lockRequested = false;
+      this.tryLock();
+    }
+    if (this.input.flareRequested) {
+      this.input.flareRequested = false;
+      if (this.missileSystem && this.player.flares > 0 && this.flareCooldown <= 0 && this.playerDown === 'flying') {
+        this.flareCooldown = 0.25;
+        this.player.flares--;
+        this.missileSystem.dropFlare(this.player.id, this.player.model.position, this.player.model.velocity);
+      }
+    }
+
+    // Maintain / drop the lock
+    if (this.lockedTarget && (!this.lockedTarget.alive || !this.inSeekerEnvelope(this.lockedTarget, 1.0, 9000))) {
+      this.lockedTarget = null;
+    }
+    // Missiles want a lock — grab one automatically when selected
+    if (this.selectedWeapon === 'msl' && !this.lockedTarget) this.tryLock();
+
+    // Trigger edge: launch a missile
+    const firing = this.playerDown === 'flying' && this.input.firing;
+    if (firing && !this.prevFiring && this.selectedWeapon === 'msl' && this.missileSystem) {
+      if (this.lockedTarget && this.player.missiles > 0 && this.launchCooldown <= 0) {
+        this.launchCooldown = 1.0;
+        this.player.missiles--;
+        const m = this.player.model;
+        const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(m.quaternion);
+        this.missileSystem.launch(this.player.missileSpec!, this.player.id,
+          m.position.clone().addScaledVector(fwd, 3), fwd, m.velocity, this.lockedTarget.id);
+      }
+    }
+    this.prevFiring = firing;
+  }
+
+  private inSeekerEnvelope(target: Combatant, coneRad: number, rangeM: number): boolean {
+    const m = this.player.model;
+    const to = target.model.position.clone().sub(m.position);
+    const dist = to.length();
+    if (dist > rangeM) return false;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(m.quaternion);
+    return to.normalize().dot(fwd) > Math.cos(coneRad);
+  }
+
+  private tryLock(): void {
+    if (!this.player.missileSpec) return;
+    const spec = this.player.missileSpec;
+    let best: Combatant | null = null;
+    let bestD = Infinity;
+    for (const c of this.combatants) {
+      if (!c.alive || c.side === this.player.side) continue;
+      if (!this.inSeekerEnvelope(c, spec.seekerConeRad * 0.7, spec.lockRangeM)) continue;
+      const d = c.model.position.distanceToSquared(this.player.model.position);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    this.lockedTarget = best;
+  }
+
+  /** Enemy jets shoot back and defend themselves. */
+  private updateAiWeapons(dt: number): void {
+    if (!this.missileSystem) return;
+    for (const c of this.combatants) {
+      if (c === this.player || !c.alive || !c.missileSpec) continue;
+
+      // Launch when in the envelope, on a human-ish cadence
+      const cd = (this.aiMissileCooldown.get(c) ?? 3) - dt;
+      this.aiMissileCooldown.set(c, cd);
+      const target = this.pickTarget(c);
+      if (cd <= 0 && target && c.missiles > 0) {
+        const to = target.model.position.clone().sub(c.model.position);
+        const dist = to.length();
+        const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(c.model.quaternion);
+        const angle = Math.acos(THREE.MathUtils.clamp(to.normalize().dot(fwd), -1, 1));
+        if (dist > 1200 && dist < 5500 && angle < 0.35) {
+          c.missiles--;
+          this.aiMissileCooldown.set(c, 7 + Math.random() * 5);
+          this.missileSystem.launch(c.missileSpec, c.id,
+            c.model.position.clone().addScaledVector(fwd, 3), fwd, c.model.velocity, target.id);
+        }
+      }
+
+      // Pop flares while a missile is inbound
+      const fcd = (this.aiFlareCooldown.get(c) ?? 0) - dt;
+      this.aiFlareCooldown.set(c, fcd);
+      if (fcd <= 0 && c.flares > 0 && this.missileSystem.inboundFor(c.id)) {
+        this.aiFlareCooldown.set(c, 0.6);
+        c.flares--;
+        this.missileSystem.dropFlare(c.id, c.model.position, c.model.velocity);
+      }
+    }
+  }
+
   private stepPhysics(dt: number): void {
     // AI decisions
     for (const c of this.combatants) {
@@ -283,10 +400,22 @@ export class FlightSession {
     for (const c of this.combatants) {
       const pilot = this.pilots.get(c);
       const firing = c === this.player
-        ? this.playerDown === 'flying' && this.input.firing
+        ? this.playerDown === 'flying' && this.input.firing && this.selectedWeapon === 'gun'
         : !!pilot && c.alive && pilot.wantsFire;
       const m = c.model;
       c.gun.update(dt, firing, c.id, m.position, m.quaternion, m.velocity, this.projectiles);
+    }
+
+    // Missiles
+    if (this.missileSystem) {
+      this.updateAiWeapons(dt);
+      const views: MissileTargetView[] = this.combatants.map(c => ({
+        id: c.id, alive: c.alive, position: c.model.position, velocity: c.model.velocity
+      }));
+      this.missileSystem.update(dt, views, this.env.terrainHeight, (targetId, damage, by) => {
+        const victim = this.combatants.find(c => c.id === targetId);
+        if (victim) this.onCombatantHit(victim, damage, by);
+      });
     }
 
     // Projectiles vs airframes + balloon
@@ -418,7 +547,7 @@ export class FlightSession {
     };
 
     // Nearest enemy designator (modern HUD only renders it)
-    const enemy = this.pickTarget(this.player);
+    const enemy = this.lockedTarget ?? this.pickTarget(this.player);
     if (enemy) {
       const v = enemy.model.position.clone().project(this.camera);
       const onScreen = v.z < 1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1;
@@ -427,8 +556,25 @@ export class FlightSession {
         sx: (v.x + 1) / 2 * window.innerWidth,
         sy: (1 - v.y) / 2 * window.innerHeight,
         dirX: v.x, dirY: v.y, behind: v.z >= 1,
-        rangeM: enemy.model.position.distanceTo(this.player.model.position)
+        rangeM: enemy.model.position.distanceTo(this.player.model.position),
+        locked: enemy === this.lockedTarget
       };
+    }
+
+    // Weapons panel + threat warning (modern)
+    if (this.player.missileSpec) {
+      info.weapon = {
+        kind: this.selectedWeapon,
+        name: this.selectedWeapon === 'gun' ? 'GUN' : this.player.missileSpec.name,
+        missiles: this.player.missiles,
+        flares: this.player.flares,
+        locked: !!this.lockedTarget
+      };
+      const inbound = this.missileSystem?.inboundFor(this.player.id);
+      if (inbound) {
+        const v = inbound.pos.clone().project(this.camera);
+        info.threat = { dirX: v.x, dirY: v.y, behind: v.z >= 1 };
+      }
     }
 
     if (this.mission) {
@@ -480,6 +626,7 @@ export class FlightSession {
     this.input.detach();
     this.touch?.dispose();
     this.hud.dispose();
+    this.missileSystem?.dispose();
     this.projectiles.dispose();
     this.effects.dispose();
     for (const c of this.combatants) c.dispose();

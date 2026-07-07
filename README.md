@@ -27,7 +27,10 @@ npm run build    # production build in dist/
 | `W` / `S` | Pitch down / up (pull) |
 | `A` / `D` | Roll left / right |
 | `Q` / `E` | Rudder left / right |
-| `Space` / left click | **Fire guns** |
+| `Space` / left click | **Fire** selected weapon |
+| `F` | Cycle weapon (gun / AIM-9) |
+| `T` | Lock target |
+| `X` | Drop flare |
 | `Shift` / `Ctrl` | Throttle up / down |
 | `1`–`9`, `0` | Direct throttle 10–100% |
 | `Tab` | Afterburner (jets) |
@@ -65,7 +68,10 @@ Saved in your browser between sessions.
   adverse yaw, low-speed stall/spin behavior, Flanders farmland. Twin .303s
   with tracer ballistics; fight a bandit flown by the AI.
 - **2026** — F-16C: FBW alpha/G limiter (25° / 9 G) with lead anticipation,
-  afterburner, speedbrake, desert canyons. M61 Vulcan; a MiG-29 patrols the map.
+  afterburner, speedbrake, desert canyons. M61 Vulcan **and four AIM-9s**:
+  cycle weapons with F, lock with T (solid seeker circle = tone), launch on
+  Space, break and pump flares (X) when the MISSILE warning flashes — the
+  MiG-29 carries R-73s and knows how to use them.
 - **Combat** — real projectile physics (muzzle velocity + gravity drop),
   damage with smoke/fire, kill explosions, respawning bandits, kill tally.
   The AI flies the *same flight model* through the same control inputs —

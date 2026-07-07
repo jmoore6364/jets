@@ -38,6 +38,9 @@ export class InputManager {
   cameraToggleRequested = false;
   respawnRequested = false;
   menuRequested = false;
+  weaponToggleRequested = false;
+  lockRequested = false;
+  flareRequested = false;
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.repeat) return;
@@ -46,6 +49,9 @@ export class InputManager {
     if (e.code === 'KeyR') this.respawnRequested = true;
     if (e.code === 'Escape') this.menuRequested = true;
     if (e.code === 'KeyM') this.mouseFly = !this.mouseFly;
+    if (e.code === 'KeyF') this.weaponToggleRequested = true;
+    if (e.code === 'KeyT') this.lockRequested = true;
+    if (e.code === 'KeyX') this.flareRequested = true;
     if (e.code === 'Tab') { this.afterburner = !this.afterburner; e.preventDefault(); }
     // Direct throttle: 1-9 = 10-90%, 0 = 100%
     if (e.code.startsWith('Digit')) {
@@ -159,9 +165,11 @@ export class InputManager {
 
       const pressed = (i: number) => !!pad.buttons[i]?.pressed;
       if (pressed(0) && !this.padButtonsPrev[0]) this.afterburner = !this.afterburner; // A
+      if (pressed(1) && !this.padButtonsPrev[1]) this.flareRequested = true;           // B
       if (pressed(2)) brake = true;                                                    // X
       if (pressed(3) && !this.padButtonsPrev[3]) this.cameraToggleRequested = true;    // Y
       if (pressed(5)) padFire = true;                                                  // RB
+      if (pressed(4) && !this.padButtonsPrev[4]) this.weaponToggleRequested = true;    // LB
       this.padButtonsPrev = pad.buttons.map(b => b.pressed);
     }
 

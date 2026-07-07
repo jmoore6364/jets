@@ -45,6 +45,8 @@ export class TouchControls {
       <button class="tbtn tfire">FIRE</button>
       <button class="tbtn tab">AB</button>
       <button class="tbtn tbrk">BRK</button>
+      <button class="tbtn twpn">WPN</button>
+      <button class="tbtn tflr">FLR</button>
       <button class="tbtn tmenu">☰</button>
       <button class="tbtn tcam">CAM</button>`;
     container.appendChild(this.root);
@@ -62,6 +64,15 @@ export class TouchControls {
     q('.tab').addEventListener('pointerdown', e => {
       e.preventDefault();
       this.input.afterburner = !this.input.afterburner;
+    });
+    q('.twpn').addEventListener('pointerdown', e => {
+      e.preventDefault();
+      this.input.weaponToggleRequested = true;
+      this.input.lockRequested = true; // selecting a weapon also tries for a lock
+    });
+    q('.tflr').addEventListener('pointerdown', e => {
+      e.preventDefault();
+      this.input.flareRequested = true;
     });
     q('.tmenu').addEventListener('pointerdown', e => {
       e.preventDefault();

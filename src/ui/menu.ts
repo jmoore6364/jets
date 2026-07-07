@@ -30,7 +30,7 @@ export class MainMenu {
       </div>
       <p class="controls-hint">${isTouchDevice()
         ? 'Right thumb: stick · Left edge: throttle · FIRE / AB / BRK buttons · ☰ menu · a bandit patrols each map'
-        : 'W/S pitch · A/D roll · Q/E rudder · Space fire · Shift/Ctrl throttle · Tab afterburner · B brake/blip · M mouse-fly · C camera · R respawn · Esc menu — a bandit patrols each map'
+        : 'W/S pitch · A/D roll · Q/E rudder · Space fire · F weapon · T lock · X flare · Shift/Ctrl throttle · Tab afterburner · B brake/blip · M mouse-fly · C camera · R respawn · Esc menu'
       }</p>`;
 
     const sections = this.root.querySelectorAll('.planes');
