@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import type { AircraftSpec } from '../engine/flight/aircraft';
 import { FlightModel } from '../engine/flight/flightModel';
+import { ArcadeFlightModel } from '../engine/flight/arcadeModel';
+import type { FlightBody } from '../engine/flight/flightBody';
 import { buildAircraftMesh } from '../world/aircraftMesh';
 import { Gun, WWI_TWIN_MG, M61_VULCAN, type GunSpec } from '../engine/combat/projectiles';
 import { AIM9, R73, type MissileSpec } from '../engine/combat/missiles';
@@ -19,7 +21,7 @@ export function hitPointsFor(spec: AircraftSpec): number {
 }
 
 export class Combatant {
-  readonly model: FlightModel;
+  readonly model: FlightBody;
   readonly mesh: THREE.Group;
   readonly gun: Gun;
   readonly maxHp: number;
@@ -40,9 +42,10 @@ export class Combatant {
     spec: AircraftSpec,
     private effects: EffectsPool,
     /** 0 = player's side, 1 = enemy. */
-    readonly side: number = 1
+    readonly side: number = 1,
+    arcade = false
   ) {
-    this.model = new FlightModel(spec);
+    this.model = arcade ? new ArcadeFlightModel(spec) : new FlightModel(spec);
     this.mesh = buildAircraftMesh(spec);
     scene.add(this.mesh);
     this.gun = new Gun(gunFor(spec));

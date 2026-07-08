@@ -6,6 +6,7 @@ import type { AircraftSpec } from '../engine/flight/aircraft';
 import { WWI_AIRCRAFT } from '../era/wwi/aircraft';
 import { MODERN_AIRCRAFT } from '../era/modern/aircraft';
 import { isTouchDevice } from './touch';
+import { getHandling, setHandling } from '../game/handling';
 
 export class MainMenu {
   private root: HTMLElement;
@@ -28,6 +29,7 @@ export class MainMenu {
           <button class="career-btn" data-era="modern">CAREER — THE LINE CONTINUES</button>
         </section>
       </div>
+      <button class="handling-btn"></button>
       <p class="controls-hint">${isTouchDevice()
         ? 'Right thumb: stick · Left edge: throttle · FIRE / AB / BRK buttons · ☰ menu · a bandit patrols each map'
         : 'W/S pitch · A/D roll · Q/E rudder · Space fire · F weapon · T lock · X flare · Shift/Ctrl throttle · Tab afterburner · B brake/blip · M mouse-fly · V sound · C camera · R respawn · Esc menu'
@@ -47,6 +49,19 @@ export class MainMenu {
     fill(sections[1], MODERN_AIRCRAFT);
     this.root.querySelectorAll<HTMLButtonElement>('.career-btn').forEach(btn => {
       btn.addEventListener('click', () => onCareer(btn.dataset.era as 'wwi' | 'modern'));
+    });
+
+    const handlingBtn = this.root.querySelector('.handling-btn') as HTMLButtonElement;
+    const renderHandling = () => {
+      const h = getHandling();
+      handlingBtn.innerHTML = h === 'arcade'
+        ? 'HANDLING: <b>ARCADE</b> — direct control, no hidden assists <small>(click for SIM)</small>'
+        : 'HANDLING: <b>SIM</b> — full aerodynamics + FCS <small>(click for ARCADE)</small>';
+    };
+    renderHandling();
+    handlingBtn.addEventListener('click', () => {
+      setHandling(getHandling() === 'arcade' ? 'sim' : 'arcade');
+      renderHandling();
     });
 
     container.appendChild(this.root);

@@ -19,6 +19,7 @@ import { MIG29 } from '../era/modern/aircraft';
 import { TouchControls, isTouchDevice } from '../ui/touch';
 import { viewportSize } from '../engine/viewport';
 import type { AudioEngine } from '../engine/audio';
+import { getHandling } from './handling';
 import type { Mission } from './mission';
 
 const PHYSICS_DT = 1 / 120;
@@ -116,7 +117,7 @@ export class FlightSession {
       this.missileSystem = new MissileSystem(this.scene, fx);
     }
 
-    this.player = this.addCombatant(spec, 0);
+    this.player = this.addCombatant(spec, 0, getHandling() === 'arcade');
     const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
     this.player.respawn(0, alt, 0, spec.cruiseSpeedMs * 1.1, 0);
 
@@ -136,8 +137,8 @@ export class FlightSession {
     }
   }
 
-  private addCombatant(spec: AircraftSpec, side: number): Combatant {
-    const c = new Combatant(this.nextId++, this.scene, spec, this.effects, side);
+  private addCombatant(spec: AircraftSpec, side: number, arcade = false): Combatant {
+    const c = new Combatant(this.nextId++, this.scene, spec, this.effects, side, arcade);
     this.combatants.push(c);
     return c;
   }

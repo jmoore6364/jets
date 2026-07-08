@@ -54,6 +54,14 @@ body.in-menu #scene { filter: brightness(0.35); }
 .era-wwi button:hover:not(:disabled) { background: rgba(216,180,106,0.18); border-color: #d8b46a; }
 .era button.locked { opacity: 0.35; cursor: default; font-style: italic; }
 .controls-hint { font-size: 0.7rem; color: #6b7a8d; letter-spacing: 0.08em; }
+.handling-btn {
+  padding: 0.5rem 1.2rem; background: rgba(255,255,255,0.05); color: #aebdd0;
+  border: 1px solid rgba(255,255,255,0.25); border-radius: 4px;
+  font-family: inherit; font-size: 0.72rem; letter-spacing: 0.1em; cursor: pointer;
+}
+.handling-btn b { color: #7ec8ff; }
+.handling-btn small { color: #5a6878; }
+.handling-btn:hover { background: rgba(130,190,255,0.15); }
 .build-stamp { position: absolute; bottom: 8px; right: 12px; font-size: 0.6rem; color: #45505e; }
 
 /* ---------- Career screens ---------- */

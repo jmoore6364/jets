@@ -6,14 +6,14 @@
  * and above all else, don't hit the ground.
  */
 import * as THREE from 'three';
-import type { FlightModel } from '../flight/flightModel';
+import type { FlightBody } from '../flight/flightBody';
 import type { GunSpec } from '../combat/projectiles';
 
 const _dir = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
 /** Roll the lift vector onto a world-space point, then pull. Shared steering core. */
-export function steerToward(me: FlightModel, point: THREE.Vector3, gain = 1): void {
+export function steerToward(me: FlightBody, point: THREE.Vector3, gain = 1): void {
   const c = me.controls;
   _q.copy(me.quaternion).invert();
   const dirB = _dir.copy(point).sub(me.position).normalize().applyQuaternion(_q);
@@ -35,7 +35,7 @@ export class RoutePilot {
 
   constructor(private route: THREE.Vector3[], private cruiseThrottle = 0.75) {}
 
-  update(dt: number, me: FlightModel, _target: FlightModel | null, aglM: number): void {
+  update(dt: number, me: FlightBody, _target: FlightBody | null, aglM: number): void {
     void dt; void _target;
     const c = me.controls;
     c.throttle = this.cruiseThrottle;
@@ -79,7 +79,7 @@ export class StrikerPilot {
     this.ai = new AiPilot(gun, skill);
   }
 
-  update(dt: number, me: FlightModel, target: FlightModel | null, aglM: number): void {
+  update(dt: number, me: FlightBody, target: FlightBody | null, aglM: number): void {
     const engaged = target && me.position.distanceTo(target.position) < 3200;
     if (engaged) {
       this.ai.update(dt, me, target, aglM);
@@ -112,7 +112,7 @@ export class AiPilot {
 
   constructor(private gun: GunSpec, private skill = 0.7) {}
 
-  update(dt: number, me: FlightModel, target: FlightModel | null, aglM: number): void {
+  update(dt: number, me: FlightBody, target: FlightBody | null, aglM: number): void {
     const c = me.controls;
     this.wantsFire = false;
     this.jinkTimer -= dt;

@@ -9,7 +9,7 @@
  * In chase view the cockpit furniture is hidden: modern keeps the full HUD
  * (floating glass), WWI drops to a slim gauge strip.
  */
-import type { FlightModel } from '../engine/flight/flightModel';
+import type { FlightBody } from '../engine/flight/flightBody';
 import type { InputManager } from '../engine/input';
 import { viewportSize } from '../engine/viewport';
 
@@ -65,7 +65,7 @@ abstract class CanvasHud implements CockpitHud {
   protected h = 0;
   private crashEl: HTMLElement | null = null;
 
-  constructor(protected container: HTMLElement, protected model: FlightModel, protected input: InputManager) {
+  constructor(protected container: HTMLElement, protected model: FlightBody, protected input: InputManager) {
     this.canvas = document.createElement('canvas');
     this.canvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
     container.appendChild(this.canvas);
@@ -642,7 +642,7 @@ export class WwiCockpit extends CanvasHud {
   }
 }
 
-export function createHud(container: HTMLElement, model: FlightModel, input: InputManager): CockpitHud {
+export function createHud(container: HTMLElement, model: FlightBody, input: InputManager): CockpitHud {
   return model.spec.era === 'modern'
     ? new ModernHud(container, model, input)
     : new WwiCockpit(container, model, input);
