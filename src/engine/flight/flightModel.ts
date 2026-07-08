@@ -158,21 +158,25 @@ export class FlightModel {
     let yawCmd = this.controls.yaw;
     const g = this.lastSample.gLoad;
     if (s.fbw) {
-      // Pitch is rate-command / attitude-hold: stick neutral brakes the pitch
-      // rate to zero, THEN latches the pitch attitude and holds it firmly.
-      // (The bouncing this used to cause was dutch roll, since fixed by the
-      // yaw damper — the attitude latch itself was always the right feel.)
+      // Stick neutral: brake the pitch rate, then latch and hold the pitch
+      // ATTITUDE — but with turn-rate feedforward, so holding the nose at
+      // your angle doesn't cancel the turn the bank is flying. The hold
+      // supplies exactly the body pitch rate a steady heading change needs,
+      // and corrects attitude error on top of it.
       const pitchNeutral = Math.abs(pitchCmd) < 0.05;
       if (pitchNeutral) {
         const upright = Math.abs(this.lastSample.bankRad) < 1.75 && Math.abs(this.lastSample.pitchRad) < 1.3;
-        let targetPitchRate: number;
         if (this.heldPitch === null || !upright) {
-          targetPitchRate = 0;
-          if (upright && Math.abs(this.angVelBody.x) < 0.1) this.heldPitch = this.lastSample.pitchRad;
+          pitchCmd = clamp(-this.angVelBody.x * 0.8, -0.5, 0.5); // brake first: no kick-back
+          if (upright && Math.abs(this.angVelBody.x) < 0.15) this.heldPitch = this.lastSample.pitchRad;
         } else {
-          targetPitchRate = clamp((this.heldPitch - this.lastSample.pitchRad) * 1.5, -0.8, 0.8);
+          // Body pitch rate needed just to keep attitude while the heading
+          // turns: rotate the world-frame yaw rate into the body frame.
+          const wWorld = this.angVelBody.clone().applyQuaternion(this.quaternion);
+          const turnFF = new THREE.Vector3(0, wWorld.y, 0).applyQuaternion(_q.copy(this.quaternion).invert()).x;
+          const targetWx = clamp((this.heldPitch - this.lastSample.pitchRad) * 1.5, -0.8, 0.8) + clamp(turnFF, -0.6, 0.6);
+          pitchCmd = clamp((targetWx - this.angVelBody.x) * 0.9, -0.6, 0.6);
         }
-        pitchCmd = clamp((targetPitchRate - this.angVelBody.x) * 0.9, -0.6, 0.6);
       } else {
         this.heldPitch = null;
       }
