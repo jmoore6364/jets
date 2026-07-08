@@ -24,8 +24,8 @@ export const F16: AircraftSpec = {
   clDa: 0.06,
   cnDr: 0.06,
   adverseYaw: 0.002, // FCS coordinates for you
-  cmAlpha: -0.25,    // relaxed static stability, FCS-augmented
-  cm0: 0.011,
+  cmAlpha: -0.08,    // genuinely relaxed static stability — the FCS is the stability
+  cm0: 0.004,
   cnBeta: 0.12,
   dihedralEffect: 0.03,
   pitchDamp: 7,

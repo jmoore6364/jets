@@ -151,6 +151,11 @@ export class FlightModel {
     let yawCmd = this.controls.yaw;
     const g = this.lastSample.gLoad;
     if (s.fbw) {
+      // Rate-command / attitude-hold: stick neutral means "stay where I
+      // pointed you", not "return to level". The FCS nulls pitch rate.
+      if (Math.abs(pitchCmd) < 0.05) {
+        pitchCmd = clamp(-this.angVelBody.x * 2.2, -0.5, 0.5);
+      }
       // Soft alpha & G limiter: bleeds off pilot pitch authority near limits.
       const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.04;
       // Mild lead on smoothed G-rate so the cap holds without pumping.
