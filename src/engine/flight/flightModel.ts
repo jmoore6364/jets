@@ -165,21 +165,26 @@ export class FlightModel {
       const gOver = Math.max(0, gPredicted - (s.fbw.gLimit - 0.5)) / 0.8;
       // Pitch-rate feedback: crisp onset, no overshoot ringing.
       pitchCmd = clamp(pitchCmd - alphaOver - gOver - this.angVelBody.x * 0.15, -1, 1);
-      // Bank-attitude hold: stick free = the FCS latches your bank angle and
-      // actively flies back to it, cancelling dihedral roll-off. Near the
-      // vertical, bank is ill-defined, so it degrades to pure rate damping.
+      // Roll is rate-command: stick deflection asks for a roll RATE, and the
+      // FCS drives the ailerons to deliver exactly that — including braking
+      // the roll to a stop the moment the stick returns to neutral. With the
+      // stick free it latches your bank angle and holds it (rate-only near
+      // the vertical, where bank is ill-defined).
+      let targetRollRate: number; // body ωz; roll right = negative
       if (Math.abs(rollCmd) < 0.05) {
         if (this.heldBank === null) this.heldBank = this.lastSample.bankRad;
         let bankErr = this.heldBank - this.lastSample.bankRad;
         bankErr = Math.atan2(Math.sin(bankErr), Math.cos(bankErr));
-        const attTerm = Math.abs(this.lastSample.pitchRad) < 1.2 ? bankErr * 1.2 : 0;
-        rollCmd = clamp(attTerm + this.angVelBody.z * 1.4, -0.7, 0.7);
+        const holdBank = Math.abs(this.lastSample.pitchRad) < 1.2;
+        targetRollRate = holdBank ? clamp(-bankErr * 2.2, -1.5, 1.5) : 0;
       } else {
         this.heldBank = null;
+        targetRollRate = -rollCmd * 4.6; // ~260 deg/s max commanded rate
       }
-      // Auto-coordination: the FCS flies the rudder to kill sideslip, which
-      // stops dihedral roll-off during hard turns.
-      yawCmd = clamp(yawCmd - 2.5 * beta, -1, 1);
+      rollCmd = clamp((this.angVelBody.z - targetRollRate) * 0.6, -1, 1);
+
+      // Auto-coordination: rudder INTO the sideslip to kill beta fast.
+      yawCmd = clamp(yawCmd + 1.8 * beta, -1, 1);
     }
 
     // --- Aerodynamic forces (body frame) ---

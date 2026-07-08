@@ -119,7 +119,7 @@ export class InputManager {
     const rate = dt / 0.18; // ~180 ms to full deflection
     const ease = (cur: number, tgt: number) => {
       const next = cur + Math.sign(tgt - cur) * Math.min(Math.abs(tgt - cur), rate);
-      return Math.abs(tgt) < 0.01 ? next * Math.max(0, 1 - dt / 0.12) : next; // recenters faster
+      return Math.abs(tgt) < 0.01 ? next * Math.max(0, 1 - dt / 0.05) : next; // recenters fast on release
     };
     this.smoothed.pitch = ease(this.smoothed.pitch, targetPitch);
     this.smoothed.roll = ease(this.smoothed.roll, targetRoll);
