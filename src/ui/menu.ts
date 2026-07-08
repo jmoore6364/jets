@@ -10,7 +10,7 @@ import { isTouchDevice } from './touch';
 export class MainMenu {
   private root: HTMLElement;
 
-  constructor(container: HTMLElement, onSelect: (spec: AircraftSpec) => void, onCareer: () => void) {
+  constructor(container: HTMLElement, onSelect: (spec: AircraftSpec) => void, onCareer: (era: 'wwi' | 'modern') => void) {
     this.root = document.createElement('div');
     this.root.className = 'menu';
     this.root.innerHTML = `
@@ -20,12 +20,12 @@ export class MainMenu {
         <section class="era era-wwi">
           <h2>1917 · THE GREAT WAR</h2>
           <div class="planes"></div>
-          <button class="career-btn">CAREER — YOUR DYNASTY BEGINS</button>
+          <button class="career-btn" data-era="wwi">CAREER — THE DYNASTY BEGINS</button>
         </section>
         <section class="era era-modern">
           <h2>2026 · MODERN ERA</h2>
           <div class="planes"></div>
-          <button class="locked" disabled>CAREER — Milestone 3</button>
+          <button class="career-btn" data-era="modern">CAREER — THE LINE CONTINUES</button>
         </section>
       </div>
       <p class="controls-hint">${isTouchDevice()
@@ -44,7 +44,9 @@ export class MainMenu {
     };
     fill(sections[0], WWI_AIRCRAFT);
     fill(sections[1], MODERN_AIRCRAFT);
-    this.root.querySelector('.career-btn')!.addEventListener('click', onCareer);
+    this.root.querySelectorAll<HTMLButtonElement>('.career-btn').forEach(btn => {
+      btn.addEventListener('click', () => onCareer(btn.dataset.era as 'wwi' | 'modern'));
+    });
 
     container.appendChild(this.root);
   }

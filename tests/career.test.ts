@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   createDynasty, createPilot, activePilot, applyMissionOutcome, rankOf,
-  MEDALS, type Dynasty
+  wwiFounderAce, dynastyLegacy, MEDALS, type Dynasty
 } from '../src/career/dynasty';
 import { generateMission } from '../src/game/mission';
 
@@ -76,6 +76,50 @@ describe('career progression', () => {
       const ats = MEDALS[side].map(m => m.at);
       expect([...ats].sort((a, b) => a - b)).toEqual(ats);
     }
+  });
+});
+
+describe('the dynasty bridge', () => {
+  it('runs concurrent careers per era and links heritage across the century', () => {
+    const d = createDynasty('Moore');
+    const founder = createPilot(d, 'Jack', 'entente', 'wwi');
+    applyMissionOutcome(d, founder, { victories: 6, survived: true, missionComplete: true });
+    expect(wwiFounderAce(d)?.firstName).toBe('Jack');
+
+    const heir = createPilot(d, 'Maverick', 'nato', 'modern');
+    expect(heir.dateISO.startsWith('2026')).toBe(true);
+    expect(heir.squadron).toBe('555th Fighter Squadron');
+    // Both careers active at once, one per era
+    expect(activePilot(d, 'wwi')?.id).toBe(founder.id);
+    expect(activePilot(d, 'modern')?.id).toBe(heir.id);
+    // Legacy pools across the whole line
+    applyMissionOutcome(d, heir, { victories: 1, survived: true, missionComplete: true });
+    expect(dynastyLegacy(d)).toBe(founder.legacy + heir.legacy);
+  });
+
+  it('awards modern medals from the NATO ladder', () => {
+    const d = createDynasty('Moore');
+    const p = createPilot(d, 'Maverick', 'nato', 'modern');
+    const c = applyMissionOutcome(d, p, { victories: 5, survived: true, missionComplete: true });
+    const ids = c.newMedals.map(m => m.id);
+    expect(ids).toContain('am');
+    expect(ids).toContain('dfc');
+  });
+
+  it('generates modern missions with heritage when the line has a WWI ace', () => {
+    const d = createDynasty('Moore');
+    const founder = createPilot(d, 'Jack', 'entente', 'wwi');
+    founder.victories = 8;
+    const p = createPilot(d, 'Maverick', 'nato', 'modern');
+    const seen = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      const m = generateMission(p, d);
+      seen.add(m.type);
+      expect(m.era).toBe('modern');
+      expect(m.heritage?.name).toBe('Jack Moore');
+      expect(Math.hypot(m.zone.x, m.zone.z)).toBeGreaterThan(5000);
+    }
+    expect(seen).toEqual(new Set(['patrol', 'escort', 'intercept']));
   });
 });
 

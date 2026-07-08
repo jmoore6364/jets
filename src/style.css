@@ -77,6 +77,11 @@ body.in-menu #scene { filter: brightness(0.35); }
 }
 .medal.none { border-color: rgba(255,255,255,0.2); color: #7d735c; font-style: italic; }
 .fallen { color: #8d8168; font-size: 0.8rem; font-style: italic; max-width: 34rem; }
+.heritage {
+  max-width: 34rem; color: #d89a8a; font-size: 0.9rem; line-height: 1.5;
+  border: 1px solid rgba(176,32,32,0.5); border-radius: 4px;
+  background: rgba(120,20,20,0.15); padding: 0.7rem 1.2rem;
+}
 .briefing {
   max-width: 36rem; text-align: left; line-height: 1.65; color: #d9cba4;
   border-left: 3px solid rgba(232,182,74,0.5); padding-left: 1.2rem; font-size: 1rem;

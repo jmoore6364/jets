@@ -7,8 +7,8 @@
  */
 import type { Era } from '../engine/flight/aircraft';
 
-/** Which side of the Great War the pilot flies for. */
-export type Side = 'entente' | 'central';
+/** Allegiance: Great War sides, or NATO for the modern era. */
+export type Side = 'entente' | 'central' | 'nato';
 
 export interface MedalAward {
   id: string;
@@ -44,12 +44,14 @@ export interface Dynasty {
 
 export const RANKS: Record<Side, string[]> = {
   entente: ['2nd Lieutenant', 'Lieutenant', 'Captain', 'Major'],
-  central: ['Leutnant', 'Oberleutnant', 'Hauptmann', 'Major']
+  central: ['Leutnant', 'Oberleutnant', 'Hauptmann', 'Major'],
+  nato: ['2nd Lieutenant', '1st Lieutenant', 'Captain', 'Major']
 };
 
 export const SQUADRONS: Record<Side, string> = {
   entente: 'No. 46 Squadron RFC',
-  central: 'Jagdstaffel 11'
+  central: 'Jagdstaffel 11',
+  nato: '555th Fighter Squadron'
 };
 
 /** Victory thresholds → decorations, in order. */
@@ -64,10 +66,19 @@ export const MEDALS: Record<Side, Array<{ at: number; id: string; name: string }
     { at: 1, id: 'ek2', name: 'Iron Cross 2nd Class' },
     { at: 5, id: 'ek1', name: 'Iron Cross 1st Class' },
     { at: 15, id: 'plm', name: 'Pour le Mérite' }
+  ],
+  nato: [
+    { at: 1, id: 'am', name: 'Air Medal' },
+    { at: 5, id: 'dfc', name: 'Distinguished Flying Cross' },
+    { at: 10, id: 'ss', name: 'Silver Star' },
+    { at: 20, id: 'moh', name: 'Medal of Honor' }
   ]
 };
 
-const CAMPAIGN_START = '1917-04-01';
+const CAMPAIGN_START: Record<Era, string> = {
+  wwi: '1917-04-01',
+  modern: '2026-07-01'
+};
 const KEY = 'jets.dynasty.v1';
 
 export function loadDynasty(): Dynasty | null {
@@ -91,14 +102,14 @@ export function createDynasty(surname: string): Dynasty {
   return { surname, createdISO: new Date().toISOString(), pilots: [], unlocks: [] };
 }
 
-export function createPilot(d: Dynasty, firstName: string, side: Side): PilotRecord {
+export function createPilot(d: Dynasty, firstName: string, side: Side, era: Era = 'wwi'): PilotRecord {
   const generation = d.pilots.length + 1;
-  // Heirs join the front where the last of the line fell.
-  const prev = d.pilots[d.pilots.length - 1];
+  // Heirs join the same era's front where the last of that line fell.
+  const prev = [...d.pilots].reverse().find(x => x.era === era);
   const p: PilotRecord = {
     id: `p${generation}-${Math.random().toString(36).slice(2, 8)}`,
     firstName,
-    era: 'wwi',
+    era,
     side,
     generation,
     rankIndex: 0,
@@ -108,14 +119,26 @@ export function createPilot(d: Dynasty, firstName: string, side: Side): PilotRec
     medals: [],
     status: 'active',
     legacy: 0,
-    dateISO: prev ? prev.dateISO : CAMPAIGN_START
+    dateISO: prev ? prev.dateISO : CAMPAIGN_START[era]
   };
   d.pilots.push(p);
   return p;
 }
 
-export function activePilot(d: Dynasty): PilotRecord | null {
-  return d.pilots.find(p => p.status === 'active') ?? null;
+export function activePilot(d: Dynasty, era?: Era): PilotRecord | null {
+  return d.pilots.find(p => p.status === 'active' && (!era || p.era === era)) ?? null;
+}
+
+/** Total legacy earned by the whole line, both eras. */
+export function dynastyLegacy(d: Dynasty): number {
+  return d.pilots.reduce((sum, p) => sum + p.legacy, 0);
+}
+
+/** The line's greatest Great War pilot — heritage for the modern era. */
+export function wwiFounderAce(d: Dynasty): PilotRecord | null {
+  const aces = d.pilots.filter(p => p.era === 'wwi' && p.victories >= 5);
+  if (!aces.length) return null;
+  return aces.reduce((a, b) => (b.victories > a.victories ? b : a));
 }
 
 export function rankOf(p: PilotRecord): string {

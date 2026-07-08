@@ -66,6 +66,41 @@ export class RoutePilot {
   }
 }
 
+/**
+ * An attacker with somewhere to be: presses toward its destination, but
+ * turns and fights when an enemy closes in. Used for intercept missions —
+ * if it reaches the target point, the defenders have failed.
+ */
+export class StrikerPilot {
+  wantsFire = false;
+  private ai: AiPilot;
+
+  constructor(private dest: THREE.Vector3, gun: GunSpec, skill = 0.6) {
+    this.ai = new AiPilot(gun, skill);
+  }
+
+  update(dt: number, me: FlightModel, target: FlightModel | null, aglM: number): void {
+    const engaged = target && me.position.distanceTo(target.position) < 3200;
+    if (engaged) {
+      this.ai.update(dt, me, target, aglM);
+      this.wantsFire = this.ai.wantsFire;
+      return;
+    }
+    this.wantsFire = false;
+    const c = me.controls;
+    c.throttle = 1;
+    c.afterburner = true;
+    c.brake = false;
+    if (aglM < 200) {
+      c.roll = THREE.MathUtils.clamp(-me.sample.bankRad * 2.5, -1, 1);
+      c.pitch = 0.9;
+      return;
+    }
+    const level = this.dest.clone().setY(me.position.y);
+    steerToward(me, level, 0.8);
+  }
+}
+
 export class AiPilot {
   /** Set true by update() when the AI wants the trigger down. */
   wantsFire = false;

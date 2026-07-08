@@ -98,7 +98,8 @@ function buildModern(spec: AircraftSpec): THREE.Group {
   const fp = finGeo.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < fp.count; i++) fp.setZ(i, fp.getZ(i) + Math.max(0, fp.getY(i)) * 0.9);
   finGeo.computeVertexNormals();
-  const fin = new THREE.Mesh(finGeo, mat(0x77808c));
+  const fin = new THREE.Mesh(finGeo, mat(spec.id === 'mig29' ? 0x4d5a63 : 0x77808c));
+  fin.name = 'fin';
   fin.position.set(0, 1.4, 3.9);
   g.add(fin);
 

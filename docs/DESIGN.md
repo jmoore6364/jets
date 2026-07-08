@@ -59,7 +59,7 @@ Sign conventions are locked by unit tests (`tests/flightModel.test.ts`).
 | **M1 ✅** | Combat core: gun ballistics with tracers, damage/kill model, dogfight AI (pursue/evade/terrain-avoid), 1v1 skirmish in both eras |
 | **M2 ✅** | WWI career vertical slice: dynasty founding, side choice (RFC/Luftstreitkräfte), mission generator (patrol/balloon/escort), confirmed victories, medals, promotions, perma-death with heirs |
 | **M3 ✅** | Modern combat: IR missiles (AIM-9 / R-73) with seeker cones, G-limited lead guidance, prox fuses; flares with per-missile resistance; lock system + launch warnings; AI missile employment and self-defense. *Remaining for M3.5: radar missiles + chaff, RWR, Top Gun scripted missions* |
-| **M4** | Dynasty meta-layer: legacy track, cross-era unlocks, family archive UI |
+| **M4 ✅** | Dynasty bridge: modern career (CAP / strike escort / alert intercept, NATO decoration ladder), concurrent careers per era, shared legacy pool, heritage — a WWI ace in the line paints the Viper's tail Richthofen red. *Remaining: unlock shop, family archive UI* |
 | **M5** | Presentation: real models, cockpits, sound, music, replay camera |
 
 ### Design principles

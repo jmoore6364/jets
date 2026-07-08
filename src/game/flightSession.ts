@@ -12,7 +12,7 @@ import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
 import { MissileSystem, type MissileTargetView } from '../engine/combat/missiles';
-import { AiPilot, RoutePilot } from '../engine/ai/pilot';
+import { AiPilot, RoutePilot, StrikerPilot } from '../engine/ai/pilot';
 import { Combatant, gunFor } from './combatant';
 import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
 import { MIG29 } from '../era/modern/aircraft';
@@ -142,15 +142,33 @@ export class FlightSession {
   // ---------------- Mission setup ----------------
 
   private setupMission(m: Mission): void {
-    const enemySpec = wwiEnemyOf(this.player.spec);
+    const modern = this.player.spec.era === 'modern';
+    const enemySpec = modern ? MIG29 : wwiEnemyOf(this.player.spec);
     const groundAtZone = this.env.terrainHeight(m.zone.x, m.zone.z);
+    const zonePos = new THREE.Vector3(m.zone.x, groundAtZone, m.zone.z);
+    const cruiseAlt = modern ? 1500 : 500;
+
+    // Heritage: the dynasty's WWI ace earns the Viper a Richthofen-red tail.
+    if (m.heritage && modern) {
+      const fin = this.player.mesh.getObjectByName('fin') as THREE.Mesh | undefined;
+      if (fin) (fin.material as THREE.MeshLambertMaterial).color.setHex(0xb02020);
+    }
 
     for (let i = 0; i < m.enemyCount; i++) {
       const e = this.addCombatant(enemySpec, 1);
-      const ox = (Math.random() - 0.5) * 800, oz = (Math.random() - 0.5) * 800;
-      e.respawn(m.zone.x + ox, groundAtZone + 500 + Math.random() * 300, m.zone.z + oz,
-        enemySpec.cruiseSpeedMs, Math.random() * Math.PI * 2);
-      this.pilots.set(e, new AiPilot(gunFor(enemySpec), 0.6 + Math.random() * 0.15));
+      if (m.type === 'intercept') {
+        // Strikers start far out, inbound low and fast toward the base.
+        const away = zonePos.clone().sub(this.player.model.position).normalize();
+        const sx = m.zone.x + away.x * 9000 + (Math.random() - 0.5) * 1500;
+        const sz = m.zone.z + away.z * 9000 + (Math.random() - 0.5) * 1500;
+        e.respawn(sx, this.env.terrainHeight(sx, sz) + 600, sz, enemySpec.cruiseSpeedMs * 1.1, 0);
+        this.pilots.set(e, new StrikerPilot(zonePos.clone().setY(groundAtZone + 400), gunFor(enemySpec), 0.6));
+      } else {
+        const ox = (Math.random() - 0.5) * 800, oz = (Math.random() - 0.5) * 800;
+        e.respawn(m.zone.x + ox, groundAtZone + cruiseAlt + Math.random() * 300, m.zone.z + oz,
+          enemySpec.cruiseSpeedMs, Math.random() * Math.PI * 2);
+        this.pilots.set(e, new AiPilot(gunFor(enemySpec), 0.6 + Math.random() * 0.15));
+      }
     }
 
     if (m.type === 'balloon' && m.balloonAltM) {
@@ -165,12 +183,13 @@ export class FlightSession {
     }
 
     if (m.type === 'escort' && m.route) {
-      const friendSpec = this.player.spec; // stand-in two-seater until real models
+      const friendSpec = this.player.spec; // stand-in package until real models
+      const friendAlt = modern ? 1400 : 450;
       const f = this.addCombatant(friendSpec, 0);
-      f.respawn(-300, this.env.terrainHeight(-300, 200) + 450, 200, friendSpec.cruiseSpeedMs * 0.95, 0);
+      f.respawn(-300, this.env.terrainHeight(-300, 200) + friendAlt, 200, friendSpec.cruiseSpeedMs * 0.95, 0);
       const route = m.route.map(w =>
-        new THREE.Vector3(w.x, this.env.terrainHeight(w.x, w.z) + 450, w.z));
-      this.pilots.set(f, new RoutePilot(route, 0.7));
+        new THREE.Vector3(w.x, this.env.terrainHeight(w.x, w.z) + friendAlt, w.z));
+      this.pilots.set(f, new RoutePilot(route, modern ? 0.8 : 0.7));
       this.escortee = f;
     }
   }
@@ -562,6 +581,19 @@ export class FlightSession {
     let complete = false;
     if (m.type === 'patrol') complete = enemiesDown;
     else if (m.type === 'balloon') complete = !!this.balloon && !this.balloon.alive;
+    else if (m.type === 'intercept') {
+      // Any striker reaching the base = mission failed.
+      for (const c of this.combatants) {
+        if (c.side !== 1 || !c.alive) continue;
+        const d = Math.hypot(c.model.position.x - m.zone.x, c.model.position.z - m.zone.z);
+        if (d < 1200) {
+          this.missionState = 'failed';
+          this.hud.showCrash('THE STRIKERS GOT THROUGH — press Esc');
+          return;
+        }
+      }
+      complete = enemiesDown;
+    }
     else if (m.type === 'escort') {
       if (this.escortee && !this.escortee.alive) {
         this.missionState = 'failed';
@@ -628,12 +660,15 @@ export class FlightSession {
       const oz = m.type === 'escort' && this.escortee?.alive ? this.escortee.model.position.z : m.zone.z;
       const bearing = Math.atan2(ox - p.x, -(oz - p.z));
       const dist = Math.hypot(ox - p.x, oz - p.z);
+      const hostiles = this.combatants.filter(c => c.side === 1 && c.alive).length;
+      const modern = this.player.spec.era === 'modern';
       const label =
         this.missionState === 'complete' ? 'Mission complete — return when ready' :
         this.missionState === 'failed' ? 'Mission failed' :
-        m.type === 'patrol' ? `Patrol: clear the sector (${this.combatants.filter(c => c.side === 1 && c.alive).length} hostile)` :
+        m.type === 'patrol' ? `${modern ? 'CAP' : 'Patrol'}: clear the sector (${hostiles} hostile)` :
         m.type === 'balloon' ? 'Destroy the observation balloon' :
-        'Escort the two-seater';
+        m.type === 'intercept' ? `Intercept: stop the strikers (${hostiles} inbound)` :
+        modern ? 'Protect the strike package' : 'Escort the two-seater';
       info.mission = {
         text: label,
         bearingRad: bearing,

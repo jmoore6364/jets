@@ -32,6 +32,7 @@ let session: FlightSession | null = null;
 let menu: MainMenu | null = null;
 let career: CareerUI | null = null;
 let careerMission: Mission | null = null;
+let careerEra: 'wwi' | 'modern' = 'wwi';
 
 function clearScreens(): void {
   menu?.dispose(); menu = null;
@@ -46,10 +47,11 @@ function showMenu(): void {
   menu = new MainMenu(uiRoot, startSkirmish, openCareer);
 }
 
-function openCareer(): void {
+function openCareer(era: 'wwi' | 'modern'): void {
   clearScreens();
   document.body.classList.add('in-menu');
-  career = new CareerUI(uiRoot, { onFly: startMission, onExit: showMenu });
+  careerEra = era;
+  career = new CareerUI(uiRoot, era, { onFly: startMission, onExit: showMenu });
 }
 
 function startSkirmish(spec: AircraftSpec): void {
@@ -75,7 +77,7 @@ function endSession(): void {
   session = null;
   if (mission) {
     document.body.classList.add('in-menu');
-    career = new CareerUI(uiRoot, { onFly: startMission, onExit: showMenu });
+    career = new CareerUI(uiRoot, careerEra, { onFly: startMission, onExit: showMenu });
     career.showDebrief(mission, result);
   } else {
     showMenu();

@@ -55,6 +55,14 @@ slip ball, twin gun breeches, and a ring-and-bead gunsight.
 
 ## What flies today (Milestones 0–2)
 
+**Careers in both eras, one dynasty** — the same family line spans the
+century. Fly the WWI career and the modern career side by side: victories
+from either era pool into shared dynasty legacy, and if your Great War
+founder made ace, your 2026 Viper flies with the family's **red tail** and
+the briefings remember why. The modern career brings CAPs, strike escorts,
+and alert-scramble intercepts (stop the inbound strikers before they reach
+the base), with the USAF decoration ladder up to the Medal of Honor.
+
 **WWI Career** — found your dynasty, name your pilot, choose your side
 (RFC Sopwith Camel or Jasta Fokker Dr.I), and fly generated missions over
 the Western Front: dawn patrols, balloon attacks, two-seater escorts.

@@ -309,6 +309,17 @@ export class ModernHud extends CanvasHud {
       }
     }
 
+    // ---- Mission orders (under the heading tape) ----
+    if (combat.mission) {
+      const m = combat.mission;
+      c.textAlign = 'center';
+      c.font = '14px Consolas, Menlo, monospace';
+      c.fillStyle = m.state === 'failed' ? 'rgba(255,90,60,0.95)' : m.state === 'complete' ? GREEN : GREEN_DIM;
+      const km = (m.distanceM / 1000).toFixed(1);
+      const relBrg = String(Math.round((((m.bearingRad * R2D) % 360) + 360) % 360)).padStart(3, '0');
+      c.fillText(m.state === 'running' ? `${m.text} · BRG ${relBrg} · ${km} KM` : m.text.toUpperCase(), cx, tapeY + 52);
+    }
+
     // ---- Kills / airframe state (top right) ----
     c.font = '14px Consolas, Menlo, monospace';
     c.textAlign = 'right';
