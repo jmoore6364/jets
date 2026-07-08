@@ -103,6 +103,8 @@ export class FlightModel {
 
   /** Smoothed G rate-of-change, used by the FBW limiter for lead anticipation. */
   private gRate = 0;
+  /** Bank angle latched by the FCS when the roll stick goes neutral. */
+  private heldBank: number | null = null;
 
   constructor(spec: AircraftSpec) {
     this.spec = spec;
@@ -163,9 +165,17 @@ export class FlightModel {
       const gOver = Math.max(0, gPredicted - (s.fbw.gLimit - 0.5)) / 0.8;
       // Pitch-rate feedback: crisp onset, no overshoot ringing.
       pitchCmd = clamp(pitchCmd - alphaOver - gOver - this.angVelBody.x * 0.15, -1, 1);
-      // Roll-rate hold: stick free = the FCS keeps the bank you left it at.
+      // Bank-attitude hold: stick free = the FCS latches your bank angle and
+      // actively flies back to it, cancelling dihedral roll-off. Near the
+      // vertical, bank is ill-defined, so it degrades to pure rate damping.
       if (Math.abs(rollCmd) < 0.05) {
-        rollCmd = clamp(this.angVelBody.z * 1.4, -0.6, 0.6);
+        if (this.heldBank === null) this.heldBank = this.lastSample.bankRad;
+        let bankErr = this.heldBank - this.lastSample.bankRad;
+        bankErr = Math.atan2(Math.sin(bankErr), Math.cos(bankErr));
+        const attTerm = Math.abs(this.lastSample.pitchRad) < 1.2 ? bankErr * 1.2 : 0;
+        rollCmd = clamp(attTerm + this.angVelBody.z * 1.4, -0.7, 0.7);
+      } else {
+        this.heldBank = null;
       }
       // Auto-coordination: the FCS flies the rudder to kill sideslip, which
       // stops dihedral roll-off during hard turns.

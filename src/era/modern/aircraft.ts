@@ -27,7 +27,7 @@ export const F16: AircraftSpec = {
   cmAlpha: -0.08,    // genuinely relaxed static stability — the FCS is the stability
   cm0: 0.004,
   cnBeta: 0.12,
-  dihedralEffect: 0.03,
+  dihedralEffect: 0.01, // the FCS masks what little there is
   pitchDamp: 7,
   rollDamp: 0.4,
   yawDamp: 0.35,
