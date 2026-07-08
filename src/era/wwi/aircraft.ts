@@ -20,7 +20,7 @@ export const FOKKER_DR1: AircraftSpec = {
   clMax: 1.5,
   alphaStallRad: 0.29,
   cd0: 0.046,
-  cmDe: 0.55,
+  cmDe: 0.15, // full stick trims near CLmax — pull hard and she mushes at the buffet, not into a tumble
   clDa: 0.05,
   cnDr: 0.07,
   adverseYaw: 0.015,
@@ -53,7 +53,7 @@ export const SOPWITH_CAMEL: AircraftSpec = {
   clMax: 1.4,
   alphaStallRad: 0.27,
   cd0: 0.045,
-  cmDe: 0.55,
+  cmDe: 0.14,
   clDa: 0.055,
   cnDr: 0.07,
   adverseYaw: 0.018,

@@ -152,7 +152,7 @@ export class FlightModel {
     const g = this.lastSample.gLoad;
     if (s.fbw) {
       // Soft alpha & G limiter: bleeds off pilot pitch authority near limits.
-      const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.06;
+      const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.04;
       // Mild lead on smoothed G-rate so the cap holds without pumping.
       const gPredicted = g + this.gRate * 0.18;
       const gOver = Math.max(0, gPredicted - (s.fbw.gLimit - 0.5)) / 0.8;
@@ -211,8 +211,11 @@ export class FlightModel {
     const qSb = qS * s.wingSpanM;
     const twoV = 2 * V;
 
-    // Pitch (+X = nose up)
-    let tx = qSc * (s.cm0 + s.cmAlpha * alpha + s.cmDe * pitchCmd);
+    // Pitch (+X = nose up). Elevator loses bite in the stalled wake, so full
+    // aft stick can't park the aircraft in a deep stall — the nose drops and
+    // it recovers, mushing at the edge instead of departing.
+    const elevEff = 1 - 0.55 * stalled;
+    let tx = qSc * (s.cm0 + s.cmAlpha * alpha + s.cmDe * elevEff * pitchCmd);
     tx -= qSc * s.pitchDamp * (w.x * s.chordM / twoV);
 
     // Yaw (-Y = nose right)
