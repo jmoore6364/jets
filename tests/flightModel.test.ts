@@ -181,6 +181,24 @@ describe('flight behavior', () => {
     expect(m.sample.pitchRad).toBeGreaterThan(0.45); // still ~26+ deg nose-up
   });
 
+  it('FCS: no dutch-roll bounce after a hard rolling pull', () => {
+    const m = freshModel(F16, 220);
+    m.controls.throttle = 0.9;
+    const dt = 1 / 120;
+    m.controls.roll = 1;
+    m.controls.pitch = 0.7;
+    while (m.sample.bankRad < 1.2) m.step(dt);
+    m.controls.roll = 0;
+    m.controls.pitch = 0;
+    // yaw damper must bleed the sideslip off smoothly, not ring
+    let maxBetaLate = 0;
+    for (let t = 0; t < 5; t += dt) {
+      m.step(dt);
+      if (t > 2.5) maxBetaLate = Math.max(maxBetaLate, Math.abs(m.sample.betaRad));
+    }
+    expect(maxBetaLate * 57.3).toBeLessThan(4); // was swinging +/-25 deg before the damper
+  });
+
   it('WWI and modern aircraft both fly with the same engine code', () => {
     for (const spec of [FOKKER_DR1, SOPWITH_CAMEL, F16]) {
       const m = freshModel(spec);

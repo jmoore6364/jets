@@ -112,6 +112,8 @@ export class FlightModel {
 
   /** Place the aircraft in level flight at a point, heading along -Z (world). */
   spawn(x: number, altitude: number, z: number, speedMs: number, headingRad = 0): void {
+    this.heldBank = null;
+    this.gRate = 0;
     this.position.set(x, altitude, z);
     this.quaternion.setFromEuler(new THREE.Euler(0, headingRad, 0, 'YXZ'));
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
@@ -153,18 +155,30 @@ export class FlightModel {
     let yawCmd = this.controls.yaw;
     const g = this.lastSample.gLoad;
     if (s.fbw) {
-      // Rate-command / attitude-hold: stick neutral means "stay where I
-      // pointed you", not "return to level". The FCS nulls pitch rate.
-      if (Math.abs(pitchCmd) < 0.05) {
-        pitchCmd = clamp(-this.angVelBody.x * 2.2, -0.5, 0.5);
+      // Pitch is G-command, like the real jet: stick neutral asks for exactly
+      // the G that keeps the flight path where you left it — including the
+      // extra G a banked turn needs, so the nose neither sags in turns nor
+      // rings against an attitude integrator (there isn't one).
+      const pitchNeutral = Math.abs(pitchCmd) < 0.05;
+      if (pitchNeutral) {
+        const gamma = Math.asin(clamp(this.velocity.y / V, -1, 1)); // flight path angle
+        const bank = this.lastSample.bankRad;
+        if (Math.abs(bank) < 1.75 && Math.abs(gamma) < 1.3) {
+          const nTarget = clamp(Math.cos(gamma) / Math.max(Math.cos(bank), 0.25), 0, 4);
+          // P on G error + D on G rate + pitch-rate damping: a dead-beat loop.
+          pitchCmd = clamp((nTarget - g) * 0.12 - this.gRate * 0.08 - this.angVelBody.x * 0.5, -0.7, 0.7);
+        } else {
+          // Inverted or near-vertical: plain pitch-rate damping.
+          pitchCmd = clamp(-this.angVelBody.x * 0.8, -0.5, 0.5);
+        }
       }
       // Soft alpha & G limiter: bleeds off pilot pitch authority near limits.
       const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.04;
       // Mild lead on smoothed G-rate so the cap holds without pumping.
       const gPredicted = g + this.gRate * 0.18;
       const gOver = Math.max(0, gPredicted - (s.fbw.gLimit - 0.5)) / 0.8;
-      // Pitch-rate feedback: crisp onset, no overshoot ringing.
-      pitchCmd = clamp(pitchCmd - alphaOver - gOver - this.angVelBody.x * 0.15, -1, 1);
+      // Rate feedback while the pilot commands (the hold branch has its own).
+      pitchCmd = clamp(pitchCmd - alphaOver - gOver - (pitchNeutral ? 0 : this.angVelBody.x * 0.15), -1, 1);
       // Roll is rate-command: stick deflection asks for a roll RATE, and the
       // FCS drives the ailerons to deliver exactly that — including braking
       // the roll to a stop the moment the stick returns to neutral. With the
@@ -190,8 +204,13 @@ export class FlightModel {
       }
       rollCmd = clamp((this.angVelBody.z - targetRollRate) * 0.6, -1, 1);
 
-      // Auto-coordination: rudder INTO the sideslip to kill beta fast.
-      yawCmd = clamp(yawCmd + 1.8 * beta, -1, 1);
+      // Auto-coordination: rudder into the sideslip, yaw DAMPER against yaw
+      // rate (kills dutch roll), and an aileron-rudder interconnect so hard
+      // rolls at alpha don't convert incidence into sideslip.
+      yawCmd = clamp(
+        yawCmd + 1.0 * beta + 1.5 * this.angVelBody.y - 0.6 * this.angVelBody.z * alpha,
+        -1, 1
+      );
     }
 
     // --- Aerodynamic forces (body frame) ---
