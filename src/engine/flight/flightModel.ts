@@ -194,6 +194,19 @@ export class FlightModel {
       // the vertical, where bank is ill-defined).
       let targetRollRate: number; // body ωz; roll right = negative
       if (Math.abs(rollCmd) < 0.05) {
+        // Level-turn assist: pulling while banked means "turn". Deepen the
+        // held bank to match the G being pulled, so the pull carves flat
+        // around the horizon instead of ballooning into a climb. Wings-level
+        // pulls (< ~15 deg) are left alone — that's an intentional loop.
+        if (this.controls.pitch > 0.1 && this.heldBank !== null) {
+          const bankNow = this.lastSample.bankRad;
+          if (Math.abs(bankNow) > 0.26 && Math.abs(this.heldBank) < 1.45) {
+            const lvl = Math.acos(clamp(1 / Math.max(g, 1.05), 0.05, 1));
+            const desired = Math.sign(bankNow) * Math.min(Math.max(Math.abs(this.heldBank), lvl), 1.45);
+            const slew = 1.1 * dt;
+            this.heldBank += clamp(desired - this.heldBank, -slew, slew);
+          }
+        }
         if (this.heldBank === null) {
           // Brake to a stop first, and only THEN latch the bank — latching
           // early would drag the jet back against its own roll momentum
