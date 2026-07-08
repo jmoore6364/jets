@@ -694,7 +694,10 @@ export class FlightSession {
       const k = 1 - Math.exp(-dt * 5);
       this.chasePos.lerp(target, this.chasePos.lengthSq() === 0 ? 1 : k);
       this.camera.position.copy(this.chasePos);
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q).lerp(new THREE.Vector3(0, 1, 0), 0.6).normalize();
+      // The camera banks WITH the aircraft (tiny world-up bias only for
+      // stability): a 75-degree bank must LOOK like 75 degrees, or a hard
+      // turn reads as a straight-up climb.
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q).lerp(new THREE.Vector3(0, 1, 0), 0.1).normalize();
       this.camera.up.copy(up);
       this.camera.lookAt(model.position);
     }
