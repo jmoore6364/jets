@@ -350,7 +350,12 @@ export class FlightSession {
     this.blackBoxTimer = 0.1;
     const m = this.player.model;
     const s = m.sample;
+    // Raw gamepad axes: catches drift from an idle controller silently
+    // overriding the keyboard.
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = pads && Array.from(pads).find(p => p && p.connected);
     this.blackBox.push({
+      pad: pad ? pad.axes.slice(0, 4).map(a => +a.toFixed(2)) : null,
       t: +performance.now().toFixed(0),
       inP: +m.controls.pitch.toFixed(2),
       inR: +m.controls.roll.toFixed(2),
@@ -370,11 +375,14 @@ export class FlightSession {
   }
 
   private dumpBlackBox(): void {
+    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(p => p && p.connected) : [];
     const dump = {
       build: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev',
       aircraft: this.player.spec.id,
+      handling: getHandling(),
       mouseFly: this.input.mouseFly,
       touch: !!this.touch,
+      gamepads: pads.map(p => ({ id: p!.id, axes: p!.axes.map(a => +a.toFixed(3)) })),
       samples: this.blackBox
     };
     const text = JSON.stringify(dump);

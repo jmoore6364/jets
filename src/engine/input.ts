@@ -30,6 +30,9 @@ export class InputManager {
   private mousePx = { x: 0, y: 0 };
 
   private padButtonsPrev: boolean[] = [];
+  /** A connected-but-untouched gamepad must never fly the plane: the pad is
+   *  ignored until an axis or button is deliberately used. */
+  private padActivated = false;
 
   /** Trigger state: Space, left mouse (in mouse-fly), or gamepad RB. */
   firing = false;
@@ -157,7 +160,10 @@ export class InputManager {
     // --- Gamepad ---
     const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
     const pad = pads && Array.from(pads).find(p => p && p.connected);
-    if (pad) {
+    if (pad && !this.padActivated) {
+      this.padActivated = pad.axes.some(a => Math.abs(a) > 0.35) || pad.buttons.some(b => b.pressed);
+    }
+    if (pad && this.padActivated) {
       const gx = InputManager.dead(pad.axes[0] ?? 0);
       const gy = InputManager.dead(pad.axes[1] ?? 0);
       const gr = InputManager.dead(pad.axes[2] ?? 0);
