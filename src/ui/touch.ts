@@ -18,7 +18,9 @@ export function isTouchDevice(): boolean {
     (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
 }
 
-const STICK_RADIUS = 65;
+const STICK_RADIUS = 56;
+/** Keep the stick anchor far enough from the bezel that a full pull always fits. */
+const EDGE_MARGIN = 84;
 
 export class TouchControls {
   /** Read by InputManager each frame. */
@@ -90,24 +92,18 @@ export class TouchControls {
       e.preventDefault();
       this.stickPointer = e.pointerId;
       zone.setPointerCapture(e.pointerId);
-      this.anchor.x = e.clientX;
-      this.anchor.y = e.clientY;
+      // Anchor clamped away from the bezel: a thumb landing in the bottom
+      // corner still has full pull travel (landing low = immediate pull,
+      // which is exactly what a low thumb-slam should mean).
+      this.anchor.x = Math.min(e.clientX, window.innerWidth - EDGE_MARGIN);
+      this.anchor.y = Math.max(Math.min(e.clientY, window.innerHeight - EDGE_MARGIN), EDGE_MARGIN * 0.7);
       this.stick.active = true;
-      this.stick.x = 0; this.stick.y = 0;
       this.base.style.display = this.knob.style.display = 'block';
-      this.placeStickVisuals(e.clientX, e.clientY);
+      this.applyStick(e.clientX, e.clientY);
     });
     zone.addEventListener('pointermove', e => {
       if (e.pointerId !== this.stickPointer) return;
-      const dx = e.clientX - this.anchor.x;
-      const dy = e.clientY - this.anchor.y;
-      const len = Math.hypot(dx, dy);
-      const clamped = Math.min(len, STICK_RADIUS);
-      const nx = len > 0 ? (dx / len) * clamped : 0;
-      const ny = len > 0 ? (dy / len) * clamped : 0;
-      this.stick.x = nx / STICK_RADIUS;
-      this.stick.y = ny / STICK_RADIUS;
-      this.placeStickVisuals(this.anchor.x + nx, this.anchor.y + ny);
+      this.applyStick(e.clientX, e.clientY);
     });
     const end = (e: PointerEvent) => {
       if (e.pointerId !== this.stickPointer) return;
@@ -118,6 +114,24 @@ export class TouchControls {
     };
     zone.addEventListener('pointerup', end);
     zone.addEventListener('pointercancel', end);
+  }
+
+  /** Follow-stick: past full deflection the base trails the thumb, so
+   *  reversals respond instantly and travel is never used up. */
+  private applyStick(fx: number, fy: number): void {
+    let dx = fx - this.anchor.x;
+    let dy = fy - this.anchor.y;
+    const len = Math.hypot(dx, dy);
+    if (len > STICK_RADIUS) {
+      const excess = len - STICK_RADIUS;
+      this.anchor.x += (dx / len) * excess;
+      this.anchor.y += (dy / len) * excess;
+      dx = fx - this.anchor.x;
+      dy = fy - this.anchor.y;
+    }
+    this.stick.x = Math.max(-1, Math.min(1, dx / STICK_RADIUS));
+    this.stick.y = Math.max(-1, Math.min(1, dy / STICK_RADIUS));
+    this.placeStickVisuals(this.anchor.x + dx, this.anchor.y + dy);
   }
 
   private placeStickVisuals(knobX: number, knobY: number): void {

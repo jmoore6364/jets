@@ -97,6 +97,8 @@ function frame(now: number): void {
   if (session && !session.update(dt)) {
     endSession();
   }
+  // Debug hook for telemetry (used by automated tests and bug hunts).
+  (window as unknown as { __jets?: object }).__jets = { session };
   requestAnimationFrame(frame);
 }
 

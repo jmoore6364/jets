@@ -54,6 +54,7 @@ body.in-menu #scene { filter: brightness(0.35); }
 .era-wwi button:hover:not(:disabled) { background: rgba(216,180,106,0.18); border-color: #d8b46a; }
 .era button.locked { opacity: 0.35; cursor: default; font-style: italic; }
 .controls-hint { font-size: 0.7rem; color: #6b7a8d; letter-spacing: 0.08em; }
+.build-stamp { position: absolute; bottom: 8px; right: 12px; font-size: 0.6rem; color: #45505e; }
 
 /* ---------- Career screens ---------- */
 .career { font-family: Georgia, 'Times New Roman', serif; }
