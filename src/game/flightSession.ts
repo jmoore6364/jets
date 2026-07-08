@@ -68,6 +68,9 @@ export class FlightSession {
 
   private accumulator = 0;
   private cameraMode: 'chase' | 'cockpit' = 'cockpit';
+  /** Black box: last ~30s of flight data, dumped with K for bug reports. */
+  private blackBox: object[] = [];
+  private blackBoxTimer = 0;
   private chasePos = new THREE.Vector3();
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
@@ -271,6 +274,11 @@ export class FlightSession {
       this.input.muteToggleRequested = false;
       this.audio?.toggleMute();
     }
+    if (this.input.blackBoxRequested) {
+      this.input.blackBoxRequested = false;
+      this.dumpBlackBox();
+    }
+    this.recordBlackBox(dt);
     this.handleWeaponInputs(dt);
 
     if (this.playerDown === 'flying') this.input.update(this.player.model.controls, dt);
@@ -331,6 +339,58 @@ export class FlightSession {
     this.hud.update(agl, this.cameraMode === 'cockpit', this.combatInfo());
     this.renderer.render(this.scene, this.camera);
     return true;
+  }
+
+  // ---------------- Black box ----------------
+
+  private recordBlackBox(dt: number): void {
+    this.blackBoxTimer -= dt;
+    if (this.blackBoxTimer > 0) return;
+    this.blackBoxTimer = 0.1;
+    const m = this.player.model;
+    const s = m.sample;
+    this.blackBox.push({
+      t: +performance.now().toFixed(0),
+      inP: +m.controls.pitch.toFixed(2),
+      inR: +m.controls.roll.toFixed(2),
+      inY: +m.controls.yaw.toFixed(2),
+      thr: +m.controls.throttle.toFixed(2),
+      bank: Math.round(s.bankRad * 57.3),
+      pitch: Math.round(s.pitchRad * 57.3),
+      hdg: Math.round(((s.headingRad * 57.3) + 360) % 360),
+      g: +s.gLoad.toFixed(1),
+      aoa: +(s.alphaRad * 57.3).toFixed(1),
+      beta: +(s.betaRad * 57.3).toFixed(1),
+      spd: Math.round(s.speedMs),
+      alt: Math.round(s.altitudeM),
+      cam: this.cameraMode
+    });
+    if (this.blackBox.length > 300) this.blackBox.shift();
+  }
+
+  private dumpBlackBox(): void {
+    const dump = {
+      build: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev',
+      aircraft: this.player.spec.id,
+      mouseFly: this.input.mouseFly,
+      touch: !!this.touch,
+      samples: this.blackBox
+    };
+    const text = JSON.stringify(dump);
+    void navigator.clipboard?.writeText(text).catch(() => undefined);
+    const blob = new Blob([text], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'flight-data.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    const note = document.createElement('div');
+    note.className = 'crash-banner';
+    note.style.borderColor = '#7ec8ff';
+    note.style.color = '#7ec8ff';
+    note.textContent = 'FLIGHT DATA SAVED (copied + downloaded) — paste it to Claude';
+    document.getElementById('ui')?.appendChild(note);
+    setTimeout(() => note.remove(), 3500);
   }
 
   // ---------------- Modern weapons ----------------
