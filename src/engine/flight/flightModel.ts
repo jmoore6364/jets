@@ -172,11 +172,18 @@ export class FlightModel {
       // the vertical, where bank is ill-defined).
       let targetRollRate: number; // body ωz; roll right = negative
       if (Math.abs(rollCmd) < 0.05) {
-        if (this.heldBank === null) this.heldBank = this.lastSample.bankRad;
-        let bankErr = this.heldBank - this.lastSample.bankRad;
-        bankErr = Math.atan2(Math.sin(bankErr), Math.cos(bankErr));
-        const holdBank = Math.abs(this.lastSample.pitchRad) < 1.2;
-        targetRollRate = holdBank ? clamp(-bankErr * 2.2, -1.5, 1.5) : 0;
+        if (this.heldBank === null) {
+          // Brake to a stop first, and only THEN latch the bank — latching
+          // early would drag the jet back against its own roll momentum
+          // (a direction-reversing "kick" the pilot never commanded).
+          targetRollRate = 0;
+          if (Math.abs(this.angVelBody.z) < 0.12) this.heldBank = this.lastSample.bankRad;
+        } else {
+          let bankErr = this.heldBank - this.lastSample.bankRad;
+          bankErr = Math.atan2(Math.sin(bankErr), Math.cos(bankErr));
+          const holdBank = Math.abs(this.lastSample.pitchRad) < 1.2;
+          targetRollRate = holdBank ? clamp(-bankErr * 2.2, -1.5, 1.5) : 0;
+        }
       } else {
         this.heldBank = null;
         targetRollRate = -rollCmd * 4.6; // ~260 deg/s max commanded rate

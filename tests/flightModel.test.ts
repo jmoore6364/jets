@@ -150,6 +150,37 @@ describe('flight behavior', () => {
     expect(m.sample.mach).toBeLessThan(1.0);
   });
 
+  it('FCS: releasing the roll stick never kicks back the other way', () => {
+    const m = freshModel(F16, 220);
+    m.controls.throttle = 0.9;
+    const dt = 1 / 120;
+    m.controls.roll = 1;
+    while (m.sample.bankRad < 1.05) m.step(dt); // roll to ~60 deg
+    let roll = 1;
+    let maxBank = -999;
+    let reversal = 0;
+    for (let t = 0; t < 6; t += dt) {
+      roll *= 1 - dt / 0.05; // keyboard-style release decay
+      m.controls.roll = roll < 0.01 ? 0 : roll;
+      m.step(dt);
+      maxBank = Math.max(maxBank, m.sample.bankRad);
+      reversal = Math.max(reversal, maxBank - m.sample.bankRad);
+    }
+    expect(reversal * 57.3).toBeLessThan(1.5); // brake-then-latch: no visible reversal
+    expect(Math.abs(m.angVelBody.z)).toBeLessThan(0.05); // and the roll is truly stopped
+  });
+
+  it('FCS: attitude holds after release (no auto-leveling)', () => {
+    const m = freshModel(F16, 220);
+    m.controls.throttle = 0.9;
+    const dt = 1 / 120;
+    m.controls.pitch = 1;
+    while (m.sample.pitchRad < 0.6) m.step(dt); // pull to ~35 deg
+    m.controls.pitch = 0;
+    for (let t = 0; t < 8; t += dt) m.step(dt);
+    expect(m.sample.pitchRad).toBeGreaterThan(0.45); // still ~26+ deg nose-up
+  });
+
   it('WWI and modern aircraft both fly with the same engine code', () => {
     for (const spec of [FOKKER_DR1, SOPWITH_CAMEL, F16]) {
       const m = freshModel(spec);
