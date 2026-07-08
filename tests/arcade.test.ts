@@ -36,6 +36,21 @@ describe('arcade handling', () => {
     expect(Math.abs(m.sample.bankRad - bankAfterSettle) * 57.3).toBeLessThan(1.0);
   });
 
+  it('THE arcade rule: banked = turning, hands off, forever', () => {
+    const m = fresh();
+    m.controls.roll = 1;
+    while (m.sample.bankRad < 0.9) m.step(dt); // ~52 deg
+    m.controls.roll = 0;
+    run(m, 0.5);
+    const hdg0 = m.sample.headingRad;
+    const bank0 = m.sample.bankRad;
+    run(m, 4); // hands completely off
+    let turned = (m.sample.headingRad - hdg0) * 57.3;
+    if (turned > 180) turned -= 360; if (turned < -180) turned += 360;
+    expect(Math.abs(turned)).toBeGreaterThan(20);          // never freezes (was 0 deg/s)
+    expect(Math.abs(m.sample.bankRad - bank0) * 57.3).toBeLessThan(3); // bank untouched
+  });
+
   it('pulling while banked turns the jet — hard', () => {
     const m = fresh();
     m.controls.roll = 1;

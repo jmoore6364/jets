@@ -41,6 +41,7 @@ function tuningFor(spec: AircraftSpec): ArcadeTuning {
 const _v = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _up = new THREE.Vector3(0, 1, 0);
 
 export class ArcadeFlightModel implements FlightBody {
   readonly spec: AircraftSpec;
@@ -83,9 +84,30 @@ export class ArcadeFlightModel implements FlightBody {
     // only thing that ever modifies your command. ---
     const authority = THREE.MathUtils.clamp((V - t.vMin * 0.6) / (t.vCorner - t.vMin * 0.6), 0.25, 1);
 
-    // Commanded body rates (smoothed for feel, ~90 ms)
+    // --- THE arcade rule: banked = turning. ---
+    // A banked aircraft sweeps its heading continuously (rotation about the
+    // world vertical, which preserves your bank and pitch exactly). Pulling
+    // while banked tightens the turn instead of ballooning into a climb.
+    const bank = this.lastSample.bankRad;
+    const sinB = Math.sin(bank);
+    const pullingBanked = Math.max(0, c.pitch) * Math.abs(sinB);
+    if (Math.abs(bank) > 0.09 && V > t.vMin * 0.8) {
+      const tanB = Math.tan(THREE.MathUtils.clamp(bank, -1.42, 1.42));
+      const pullBoost = 1 + 2.2 * pullingBanked;
+      const gCap = (t.gMax * G0 / V) * 1.05; // the carve rides the G limit, never beyond
+      const turn = THREE.MathUtils.clamp(
+        -2.2 * (G0 * tanB / V) * pullBoost * authority,
+        -gCap, gCap
+      );
+      _q.setFromAxisAngle(_up, turn * dt);
+      this.quaternion.premultiply(_q);
+    }
+
+    // Commanded body rates (smoothed for feel, ~90 ms). Pulling while banked
+    // spends most of the stick on the turn above, not on raising the nose.
+    const pitchAuthority = authority * (1 - 0.62 * pullingBanked);
     const k = 1 - Math.exp(-dt / 0.09);
-    this.rates.x += ((c.pitch * t.pitchRate * authority) - this.rates.x) * k;
+    this.rates.x += ((c.pitch * t.pitchRate * pitchAuthority) - this.rates.x) * k;
     this.rates.z += ((-c.roll * t.rollRate * authority) - this.rates.z) * k;
     this.rates.y += ((-c.yaw * t.yawRate * authority) - this.rates.y) * k;
 
