@@ -105,6 +105,8 @@ export class FlightModel {
   private gRate = 0;
   /** Bank angle latched by the FCS when the roll stick goes neutral. */
   private heldBank: number | null = null;
+  /** Pitch attitude latched by the FCS when the pitch stick goes neutral. */
+  private heldPitch: number | null = null;
 
   constructor(spec: AircraftSpec) {
     this.spec = spec;
@@ -113,6 +115,7 @@ export class FlightModel {
   /** Place the aircraft in level flight at a point, heading along -Z (world). */
   spawn(x: number, altitude: number, z: number, speedMs: number, headingRad = 0): void {
     this.heldBank = null;
+    this.heldPitch = null;
     this.gRate = 0;
     this.position.set(x, altitude, z);
     this.quaternion.setFromEuler(new THREE.Euler(0, headingRad, 0, 'YXZ'));
@@ -155,22 +158,23 @@ export class FlightModel {
     let yawCmd = this.controls.yaw;
     const g = this.lastSample.gLoad;
     if (s.fbw) {
-      // Pitch is G-command, like the real jet: stick neutral asks for exactly
-      // the G that keeps the flight path where you left it — including the
-      // extra G a banked turn needs, so the nose neither sags in turns nor
-      // rings against an attitude integrator (there isn't one).
+      // Pitch is rate-command / attitude-hold: stick neutral brakes the pitch
+      // rate to zero, THEN latches the pitch attitude and holds it firmly.
+      // (The bouncing this used to cause was dutch roll, since fixed by the
+      // yaw damper — the attitude latch itself was always the right feel.)
       const pitchNeutral = Math.abs(pitchCmd) < 0.05;
       if (pitchNeutral) {
-        const gamma = Math.asin(clamp(this.velocity.y / V, -1, 1)); // flight path angle
-        const bank = this.lastSample.bankRad;
-        if (Math.abs(bank) < 1.75 && Math.abs(gamma) < 1.3) {
-          const nTarget = clamp(Math.cos(gamma) / Math.max(Math.cos(bank), 0.25), 0, 4);
-          // P on G error + D on G rate + pitch-rate damping: a dead-beat loop.
-          pitchCmd = clamp((nTarget - g) * 0.12 - this.gRate * 0.08 - this.angVelBody.x * 0.5, -0.7, 0.7);
+        const upright = Math.abs(this.lastSample.bankRad) < 1.75 && Math.abs(this.lastSample.pitchRad) < 1.3;
+        let targetPitchRate: number;
+        if (this.heldPitch === null || !upright) {
+          targetPitchRate = 0;
+          if (upright && Math.abs(this.angVelBody.x) < 0.1) this.heldPitch = this.lastSample.pitchRad;
         } else {
-          // Inverted or near-vertical: plain pitch-rate damping.
-          pitchCmd = clamp(-this.angVelBody.x * 0.8, -0.5, 0.5);
+          targetPitchRate = clamp((this.heldPitch - this.lastSample.pitchRad) * 1.5, -0.8, 0.8);
         }
+        pitchCmd = clamp((targetPitchRate - this.angVelBody.x) * 0.9, -0.6, 0.6);
+      } else {
+        this.heldPitch = null;
       }
       // Soft alpha & G limiter: bleeds off pilot pitch authority near limits.
       const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.04;
