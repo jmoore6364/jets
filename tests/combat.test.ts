@@ -96,12 +96,16 @@ describe('AI pilot', () => {
 
     const before = angleOff();
     const dt = 1 / 120;
+    let minAngle = before;
     for (let t = 0; t < 8; t += dt) {
       ai.update(dt, me, tgt, 3000);
       me.step(dt);
       tgt.step(dt);
+      minAngle = Math.min(minAngle, angleOff());
     }
-    expect(angleOff()).toBeLessThan(before * 0.5);
+    // At some point in the intercept the AI must be pointing nearly at the
+    // target (final angle is meaningless once it merges and blows past).
+    expect(minAngle).toBeLessThan(Math.min(0.35, before * 0.4));
   });
 
   it('pulls up instead of chasing into the ground', () => {
