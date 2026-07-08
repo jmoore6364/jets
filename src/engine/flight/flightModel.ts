@@ -101,7 +101,7 @@ export class FlightModel {
     climbRateMs: 0, stalled: false, thrustN: 0
   };
 
-  /** G rate-of-change, used by the FBW limiter for lead anticipation. */
+  /** Smoothed G rate-of-change, used by the FBW limiter for lead anticipation. */
   private gRate = 0;
 
   constructor(spec: AircraftSpec) {
@@ -145,20 +145,27 @@ export class FlightModel {
     const alpha = Math.atan2(-vBody.y, -vBody.z);
     const beta = Math.asin(clamp(vBody.x / V, -1, 1));
 
-    // --- Controls (with optional FBW limiter) ---
+    // --- Controls (with optional FBW stability augmentation + limiters) ---
     let pitchCmd = this.controls.pitch;
+    let rollCmd = this.controls.roll;
+    let yawCmd = this.controls.yaw;
     const g = this.lastSample.gLoad;
     if (s.fbw) {
       // Soft alpha & G limiter: bleeds off pilot pitch authority near limits.
-      const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.1;
-      // Lead anticipation: limit on where G is *heading*, not just where it is,
-      // then a soft knee 1 G early so the cap holds under full aft stick.
-      const gPredicted = g + this.gRate * 0.5;
-      const gOver = Math.max(0, gPredicted - (s.fbw.gLimit - 1)) / 0.8;
-      pitchCmd = clamp(pitchCmd - alphaOver - gOver, -1, 1);
+      const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.06;
+      // Mild lead on smoothed G-rate so the cap holds without pumping.
+      const gPredicted = g + this.gRate * 0.18;
+      const gOver = Math.max(0, gPredicted - (s.fbw.gLimit - 0.5)) / 0.8;
+      // Pitch-rate feedback: crisp onset, no overshoot ringing.
+      pitchCmd = clamp(pitchCmd - alphaOver - gOver - this.angVelBody.x * 0.15, -1, 1);
+      // Roll-rate hold: stick free = the FCS keeps the bank you left it at.
+      if (Math.abs(rollCmd) < 0.05) {
+        rollCmd = clamp(this.angVelBody.z * 1.4, -0.6, 0.6);
+      }
+      // Auto-coordination: the FCS flies the rudder to kill sideslip, which
+      // stops dihedral roll-off during hard turns.
+      yawCmd = clamp(yawCmd - 2.5 * beta, -1, 1);
     }
-    const rollCmd = this.controls.roll;
-    const yawCmd = this.controls.yaw;
 
     // --- Aerodynamic forces (body frame) ---
     let { cl, cd, stalled } = aeroCoefficients(s, alpha);
@@ -243,7 +250,8 @@ export class FlightModel {
     this.quaternion.normalize();
 
     // --- Sample for HUD/AI ---
-    this.gRate = clamp((gLoad - this.lastSample.gLoad) / dt, -60, 60);
+    const gRateInst = clamp((gLoad - this.lastSample.gLoad) / dt, -60, 60);
+    this.gRate += (gRateInst - this.gRate) * Math.min(1, dt / 0.06); // low-pass: kills limiter pumping
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);

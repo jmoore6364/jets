@@ -96,7 +96,7 @@ describe('AI pilot', () => {
 
     const before = angleOff();
     const dt = 1 / 120;
-    for (let t = 0; t < 6; t += dt) {
+    for (let t = 0; t < 8; t += dt) {
       ai.update(dt, me, tgt, 3000);
       me.step(dt);
       tgt.step(dt);
