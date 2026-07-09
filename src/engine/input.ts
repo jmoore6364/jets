@@ -48,6 +48,7 @@ export class InputManager {
   muteToggleRequested = false;
   blackBoxRequested = false;
   pauseRequested = false;
+  wingmanOrderRequested = false;
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.repeat) return;
@@ -62,6 +63,7 @@ export class InputManager {
     if (e.code === 'KeyV') this.muteToggleRequested = true;
     if (e.code === 'KeyK') this.blackBoxRequested = true;
     if (e.code === 'KeyP') this.pauseRequested = true;
+    if (e.code === 'KeyG') this.wingmanOrderRequested = true;
     if (e.code === 'Tab') { this.afterburner = !this.afterburner; e.preventDefault(); }
     // Direct throttle: 1-9 = 10-90%, 0 = 100%
     if (e.code.startsWith('Digit')) {

@@ -44,6 +44,7 @@ export interface CombatInfo {
   };
   /** Inbound missile warning (screen-projected direction). */
   threat?: { dirX: number; dirY: number; behind: boolean };
+  wingman?: { alive: boolean; mode: 'engage' | 'cover' };
   mission?: {
     text: string;
     bearingRad: number;
@@ -332,6 +333,10 @@ export class ModernHud extends CanvasHud {
     if (combat.hpFrac < 1) {
       c.fillStyle = combat.hpFrac > 0.5 ? GREEN_DIM : 'rgba(255,90,60,0.9)';
       c.fillText(`AIRFRAME ${Math.round(combat.hpFrac * 100)}%`, w - 24, 48);
+    }
+    if (combat.wingman) {
+      c.fillStyle = combat.wingman.alive ? GREEN_DIM : 'rgba(255,90,60,0.75)';
+      c.fillText(combat.wingman.alive ? `WM ${combat.wingman.mode.toUpperCase()} [G]` : 'WM DOWN', w - 24, combat.hpFrac < 1 ? 68 : 48);
     }
 
     // ---- Warnings ----

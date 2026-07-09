@@ -12,7 +12,7 @@ import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
 import { MissileSystem, type MissileTargetView } from '../engine/combat/missiles';
-import { AiPilot, RoutePilot, StrikerPilot } from '../engine/ai/pilot';
+import { AiPilot, RoutePilot, StrikerPilot, WingmanPilot } from '../engine/ai/pilot';
 import { FlightModel } from '../engine/flight/flightModel';
 import { Combatant, gunFor } from './combatant';
 import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
@@ -58,8 +58,9 @@ export class FlightSession {
   private combatants: Combatant[] = [];
   private pilots = new Map<Combatant, Pilot>();
   private player: Combatant;
+  private wingman: Combatant | null = null;
   private escortee: Combatant | null = null;
-  private banditRespawnTimer = 0;
+  private respawnTimers = new Map<Combatant, number>();
   private nextId = 0;
 
   /** Balloon objective (balloon missions). */
@@ -130,10 +131,12 @@ export class FlightSession {
     const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
     this.player.respawn(0, alt, 0, spec.cruiseSpeedMs * 1.1, 0);
 
+    this.spawnWingman();
     if (mission) {
       this.missionState = 'running';
       this.setupMission(mission);
     } else {
+      this.spawnSkirmishBandit();
       this.spawnSkirmishBandit();
     }
 
@@ -241,9 +244,22 @@ export class FlightSession {
     return g;
   }
 
-  private spawnSkirmishBandit(): void {
+  /** A wingman on your wing, in every fight. Same mount as yours. */
+  private spawnWingman(): void {
+    const spec = this.player.spec;
+    if (!this.wingman) {
+      this.wingman = this.addCombatant(spec, 0);
+      this.pilots.set(this.wingman, new WingmanPilot(gunFor(spec), this.player.model, 0.75));
+    }
+    const p = this.player.model.position;
+    const off = new THREE.Vector3(70, 12, 90).applyQuaternion(this.player.model.quaternion);
+    this.wingman.respawn(p.x + off.x, Math.max(p.y + off.y, this.env.terrainHeight(p.x + off.x, p.z + off.z) + 200),
+      p.z + off.z, spec.cruiseSpeedMs * 1.1, this.player.model.sample.headingRad);
+  }
+
+  private spawnSkirmishBandit(existing?: Combatant): void {
     const spec = skirmishBanditFor(this.player.spec);
-    let bandit = this.combatants.find(c => c !== this.player);
+    let bandit = existing;
     if (!bandit) {
       bandit = this.addCombatant(spec, 1);
       this.pilots.set(bandit, new AiPilot(gunFor(spec), difficultyParams().skill));
@@ -262,7 +278,13 @@ export class FlightSession {
     const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[this.player.spec.era];
     this.player.respawn(0, alt, 0, this.player.spec.cruiseSpeedMs * 1.1, 0);
     this.playerDown = 'flying';
-    if (!this.mission) this.spawnSkirmishBandit();
+    this.spawnWingman();
+    if (!this.mission) {
+      for (const c of this.combatants) {
+        if (c.side === 1) this.spawnSkirmishBandit(c);
+      }
+      this.respawnTimers.clear();
+    }
   }
 
   getResult(): SessionResult {
@@ -306,6 +328,14 @@ export class FlightSession {
       this.input.blackBoxRequested = false;
       this.dumpBlackBox();
     }
+    if (this.input.wingmanOrderRequested) {
+      this.input.wingmanOrderRequested = false;
+      const wp = this.wingman ? this.pilots.get(this.wingman) : null;
+      if (wp instanceof WingmanPilot) {
+        wp.mode = wp.mode === 'engage' ? 'cover' : 'engage';
+        this.toast(wp.mode === 'engage' ? 'WINGMAN: ENGAGE — cleared to hunt' : 'WINGMAN: COVER — on your wing', 1800);
+      }
+    }
     if (this.input.pauseRequested) {
       this.input.pauseRequested = false;
       this.paused = !this.paused;
@@ -327,12 +357,19 @@ export class FlightSession {
       this.accumulator -= PHYSICS_DT;
     }
 
-    // Skirmish bandit lifecycle
+    // Skirmish lifecycle: dead bandits respawn after 7s, a lost wingman
+    // rejoins after 15s.
     if (!this.mission) {
-      const bandit = this.combatants.find(c => c !== this.player);
-      if (bandit && !bandit.alive) {
-        this.banditRespawnTimer -= dt;
-        if (this.banditRespawnTimer <= 0) this.spawnSkirmishBandit();
+      for (const c of this.combatants) {
+        if (c === this.player || c.alive) { this.respawnTimers.delete(c); continue; }
+        const t = (this.respawnTimers.get(c) ?? (c === this.wingman ? 15 : 7)) - dt;
+        if (t <= 0) {
+          this.respawnTimers.delete(c);
+          if (c === this.wingman) this.spawnWingman();
+          else this.spawnSkirmishBandit(c);
+        } else {
+          this.respawnTimers.set(c, t);
+        }
       }
     }
 
@@ -709,8 +746,12 @@ export class FlightSession {
       if (c.lastHitBy === this.player.id) {
         this.kills++;
         this.announceKill();
+      } else if (this.wingman && c.lastHitBy === this.wingman.id) {
+        this.toast(this.player.spec.era === 'wwi' ? 'YOUR WINGMAN GETS ONE!' : 'WINGMAN: SPLASH ONE');
       }
-      this.banditRespawnTimer = 7;
+    }
+    if (wasAlive && !c.alive && c === this.wingman) {
+      this.toast(this.player.spec.era === 'wwi' ? 'YOUR WINGMAN GOES DOWN' : 'WINGMAN IS DOWN', 2600);
     }
   }
 
@@ -736,7 +777,6 @@ export class FlightSession {
           this.kills++;
           this.announceKill();
         }
-        this.banditRespawnTimer = 7;
       }
       this.effects.explosion(pos.clone());
       c.mesh.visible = false;
@@ -814,6 +854,15 @@ export class FlightSession {
         dirX: v.x, dirY: v.y, behind: v.z >= 1,
         rangeM: enemy.model.position.distanceTo(this.player.model.position),
         locked: enemy === this.lockedTarget
+      };
+    }
+
+    // Wingman status
+    if (this.wingman) {
+      const wp = this.pilots.get(this.wingman);
+      info.wingman = {
+        alive: this.wingman.alive,
+        mode: wp instanceof WingmanPilot ? wp.mode : 'engage'
       };
     }
 

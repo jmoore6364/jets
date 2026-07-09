@@ -106,6 +106,56 @@ export class StrikerPilot {
   }
 }
 
+/**
+ * Your wingman: formates off your right wing, and fights per your orders.
+ * ENGAGE: hunts freely. COVER: sticks close, only engaging threats near you.
+ */
+export class WingmanPilot {
+  wantsFire = false;
+  mode: 'engage' | 'cover' = 'engage';
+  private ai: AiPilot;
+
+  constructor(gun: GunSpec, private leader: FlightBody, skill = 0.7) {
+    this.ai = new AiPilot(gun, skill);
+  }
+
+  update(dt: number, me: FlightBody, target: FlightBody | null, aglM: number): void {
+    const nearLeader = target
+      ? target.position.distanceTo(this.leader.position) < (this.mode === 'cover' ? 3500 : 99999)
+      : false;
+
+    if (target && nearLeader) {
+      this.ai.update(dt, me, target, aglM);
+      this.wantsFire = this.ai.wantsFire;
+      return;
+    }
+
+    // Formate: a slot behind-right-above the leader.
+    this.wantsFire = false;
+    const c = me.controls;
+    const slot = new THREE.Vector3(60, 15, 80)
+      .applyQuaternion(this.leader.quaternion)
+      .add(this.leader.position);
+    const dist = me.position.distanceTo(slot);
+
+    if (aglM < 200) {
+      c.roll = THREE.MathUtils.clamp(-me.sample.bankRad * 2.5, -1, 1);
+      c.pitch = 0.8;
+      c.throttle = 1;
+      return;
+    }
+
+    steerToward(me, slot, dist > 400 ? 0.9 : 0.45);
+    const leaderSpeed = this.leader.sample.speedMs;
+    c.throttle = THREE.MathUtils.clamp(
+      (leaderSpeed / Math.max(me.sample.speedMs, 40)) * 0.8 + (dist - 120) / 800,
+      0.35, 1
+    );
+    c.afterburner = dist > 1500;
+    c.brake = false;
+  }
+}
+
 export class AiPilot {
   /** Set true by update() when the AI wants the trigger down. */
   wantsFire = false;
