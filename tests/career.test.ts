@@ -119,7 +119,7 @@ describe('the dynasty bridge', () => {
       expect(m.heritage?.name).toBe('Jack Moore');
       expect(Math.hypot(m.zone.x, m.zone.z)).toBeGreaterThan(5000);
     }
-    expect(seen).toEqual(new Set(['patrol', 'escort', 'intercept']));
+    expect(seen).toEqual(new Set(['patrol', 'escort', 'intercept', 'strike']));
   });
 });
 

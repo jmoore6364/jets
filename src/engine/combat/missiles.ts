@@ -7,8 +7,13 @@
  */
 import * as THREE from 'three';
 
+export type SeekerKind = 'ir' | 'radar';
+export type DecoyKind = 'flare' | 'chaff';
+
 export interface MissileSpec {
   name: string;
+  /** IR seekers are seduced by flares; radar seekers by chaff. */
+  seeker: SeekerKind;
   accelMs2: number;
   burnS: number;
   maxSpeedMs: number;
@@ -18,18 +23,33 @@ export interface MissileSpec {
   lockRangeM: number;
   proxFuseM: number;
   damage: number;
-  /** Chance (0..1) to IGNORE any given flare. */
+  /** Chance (0..1) to IGNORE any given matching decoy. */
   flareResistance: number;
 }
 
 export const AIM9: MissileSpec = {
-  name: 'AIM-9', accelMs2: 230, burnS: 5.0, maxSpeedMs: 900, turnG: 35,
+  name: 'AIM-9', seeker: 'ir', accelMs2: 230, burnS: 5.0, maxSpeedMs: 900, turnG: 35,
   seekerConeRad: 0.70, lockRangeM: 6000, proxFuseM: 9, damage: 5, flareResistance: 0.74
 };
 
 export const R73: MissileSpec = {
-  name: 'R-73', accelMs2: 240, burnS: 4.6, maxSpeedMs: 880, turnG: 40,
+  name: 'R-73', seeker: 'ir', accelMs2: 240, burnS: 4.6, maxSpeedMs: 880, turnG: 40,
   seekerConeRad: 0.85, lockRangeM: 5500, proxFuseM: 9, damage: 5, flareResistance: 0.50
+};
+
+export const AIM120: MissileSpec = {
+  name: 'AIM-120', seeker: 'radar', accelMs2: 300, burnS: 6.5, maxSpeedMs: 1250, turnG: 30,
+  seekerConeRad: 1.0, lockRangeM: 15000, proxFuseM: 12, damage: 6, flareResistance: 0.66
+};
+
+export const R77: MissileSpec = {
+  name: 'R-77', seeker: 'radar', accelMs2: 280, burnS: 6.0, maxSpeedMs: 1150, turnG: 28,
+  seekerConeRad: 1.0, lockRangeM: 13000, proxFuseM: 12, damage: 6, flareResistance: 0.55
+};
+
+export const SAM: MissileSpec = {
+  name: 'SA-8', seeker: 'radar', accelMs2: 260, burnS: 7.0, maxSpeedMs: 950, turnG: 22,
+  seekerConeRad: 1.2, lockRangeM: 8000, proxFuseM: 15, damage: 6, flareResistance: 0.5
 };
 
 /** Minimal effects interface so the system runs headless in tests. */
@@ -48,6 +68,7 @@ export interface MissileTargetView {
 interface Flare {
   id: number;
   ownerId: number;
+  kind: DecoyKind;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   life: number;
@@ -106,14 +127,17 @@ export class MissileSystem {
     });
   }
 
-  dropFlare(ownerId: number, position: THREE.Vector3, velocity: THREE.Vector3): void {
+  dropFlare(ownerId: number, position: THREE.Vector3, velocity: THREE.Vector3, kind: DecoyKind = 'flare'): void {
     let sprite: THREE.Sprite | null = null;
-    sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffd27a, transparent: true, opacity: 0.95 }));
-    sprite.scale.setScalar(3.2);
+    sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      color: kind === 'flare' ? 0xffd27a : 0xd8d8e8, transparent: true, opacity: kind === 'flare' ? 0.95 : 0.6
+    }));
+    sprite.scale.setScalar(kind === 'flare' ? 3.2 : 4.5);
     this.scene.add(sprite);
     this.flares.push({
       id: this.flareId++,
       ownerId,
+      kind,
       pos: position.clone(),
       vel: velocity.clone().multiplyScalar(0.55).add(new THREE.Vector3((this.rng() - 0.5) * 20, -22, (this.rng() - 0.5) * 20)),
       life: FLARE_LIFE_S,
@@ -176,9 +200,11 @@ export class MissileSystem {
         if (angleOff > m.spec.seekerConeRad) {
           m.guided = false; // target escaped the seeker
         } else {
-          // Flare consideration: fresh flares from the target inside the cone
+          // Decoy consideration: only the matching kind seduces this seeker
+          // (flares vs IR, chaff vs radar), fresh and inside the cone.
+          const wantKind: DecoyKind = m.spec.seeker === 'ir' ? 'flare' : 'chaff';
           for (const f of this.flares) {
-            if (f.ownerId !== m.targetId || m.consideredFlares.has(f.id)) continue;
+            if (f.ownerId !== m.targetId || f.kind !== wantKind || m.consideredFlares.has(f.id)) continue;
             if (f.life < FLARE_LIFE_S - 1.2) continue; // only hot, fresh flares seduce
             const toFlare = f.pos.clone().sub(m.pos);
             if (toFlare.length() > 2500) continue;

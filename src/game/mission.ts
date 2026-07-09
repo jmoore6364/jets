@@ -7,7 +7,7 @@ import type { Era } from '../engine/flight/aircraft';
 import type { Side, PilotRecord, Dynasty } from '../career/dynasty';
 import { formatDate, wwiFounderAce } from '../career/dynasty';
 
-export type MissionType = 'patrol' | 'balloon' | 'escort' | 'intercept';
+export type MissionType = 'patrol' | 'balloon' | 'escort' | 'intercept' | 'strike';
 
 export interface Mission {
   era: Era;
@@ -85,7 +85,7 @@ function generateWwi(pilot: PilotRecord): Mission {
 }
 
 function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
-  const type: MissionType = pick(['patrol', 'patrol', 'escort', 'intercept']);
+  const type: MissionType = pick(['patrol', 'patrol', 'escort', 'intercept', 'strike']);
   const sector = pick(MODERN_SECTORS);
   const date = formatDate(pilot.dateISO);
   const bearing = Math.random() * Math.PI * 2;
@@ -114,6 +114,18 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
         `${date}. A strike package is going through ${sector} at medium level and ` +
         `hostile CAPs are up. You are the sweep: keep the Fulcrums off the package until ` +
         `it is off target. Lose the strikers, lose the war that day.` + heritageLine
+    };
+  }
+
+  if (type === 'strike') {
+    return {
+      era: 'modern', type, side: 'nato', zone, enemyCount: 1, heritage,
+      title: `Deep Strike — ${sector}`,
+      briefing:
+        `${date}. A hardened command bunker in ${sector} is coordinating everything ` +
+        `hostile in this sector, and it is defended: an SA-8 ring sits 900 meters east, ` +
+        `and a CAP is up. Kill the radar or stay low and fast; either way the bunker ` +
+        `dies today. Guns and missiles both work on soft structures.` + heritageLine
     };
   }
 

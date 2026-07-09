@@ -36,12 +36,14 @@ export interface CombatInfo {
     locked?: boolean;
   };
   weapon?: {
-    kind: 'gun' | 'msl';
+    kind: 'gun' | 'msl' | 'bvr';
     name: string;
     missiles: number;
     flares: number;
     locked: boolean;
   };
+  /** RWR: an enemy radar is painting us (yellow spike, pre-launch). */
+  rwr?: { dirX: number; dirY: number; behind: boolean };
   /** Inbound missile warning (screen-projected direction). */
   threat?: { dirX: number; dirY: number; behind: boolean };
   wingman?: { alive: boolean; mode: 'engage' | 'cover' };
@@ -232,7 +234,7 @@ export class ModernHud extends CanvasHud {
       c.fillStyle = GREEN_DIM;
       c.fillText(`FLR ${wp.flares}`, spdX - 8, boxY + 102);
       c.fillStyle = GREEN;
-      if (wp.kind === 'msl' && !wp.locked) {
+      if (wp.kind !== 'gun' && !wp.locked) {
         c.fillText('NO LOCK', spdX - 8, boxY + 122);
       }
     } else {
@@ -345,6 +347,28 @@ export class ModernHud extends CanvasHud {
       c.fillStyle = 'rgba(255,70,60,0.95)';
       c.font = 'bold 22px Consolas, Menlo, monospace';
       if (Math.floor(performance.now() / 250) % 2 === 0) c.fillText('STALL', cx, cy - h * 0.2);
+    }
+    if (combat.rwr && !combat.threat) {
+      // Yellow spike: someone's radar is on you. Not shot at — yet.
+      const flash = Math.floor(performance.now() / 400) % 2 === 0;
+      c.fillStyle = 'rgba(255,210,80,0.9)';
+      if (flash) {
+        c.font = 'bold 16px Consolas, Menlo, monospace';
+        c.fillText('SPIKE', cx, cy + h * 0.13);
+      }
+      let dx = combat.rwr.dirX, dy = -combat.rwr.dirY;
+      if (combat.rwr.behind) { dx = -dx; dy = -dy; }
+      const len = Math.max(Math.abs(dx), Math.abs(dy), 1e-4);
+      const ex = cx + (dx / len) * w * 0.3;
+      const ey = cy + (dy / len) * h * 0.28;
+      c.save();
+      c.translate(ex, ey);
+      c.rotate(Math.atan2(dy, dx));
+      c.beginPath();
+      c.moveTo(10, 0); c.lineTo(-5, -6); c.lineTo(-5, 6);
+      c.closePath();
+      c.fill();
+      c.restore();
     }
     if (combat.threat) {
       const flash = Math.floor(performance.now() / 180) % 2 === 0;

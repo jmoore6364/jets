@@ -11,7 +11,7 @@ import { buildEnvironment, type EraEnvironment } from '../world/terrain';
 import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
-import { MissileSystem, type MissileTargetView } from '../engine/combat/missiles';
+import { MissileSystem, SAM, type MissileTargetView, type MissileSpec } from '../engine/combat/missiles';
 import { AiPilot, RoutePilot, StrikerPilot, WingmanPilot } from '../engine/ai/pilot';
 import { FlightModel } from '../engine/flight/flightModel';
 import { Combatant, gunFor } from './combatant';
@@ -65,6 +65,9 @@ export class FlightSession {
 
   /** Balloon objective (balloon missions). */
   private balloon: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean } | null = null;
+  /** Strike mission objectives. */
+  private bunker: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean } | null = null;
+  private sam: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean; cooldown: number } | null = null;
 
   private hud: CockpitHud;
   private input = new InputManager();
@@ -78,6 +81,7 @@ export class FlightSession {
   /** Arcade resupply timers. */
   private gunRegenDelay = 0;
   private missileRegenTimer = 20;
+  private bvrRegenTimer = 30;
   private flareRegenTimer = 6;
 
   private paused = false;
@@ -88,7 +92,7 @@ export class FlightSession {
 
   // Modern weapons state
   private missileSystem: MissileSystem | null = null;
-  private selectedWeapon: 'gun' | 'msl' = 'gun';
+  private selectedWeapon: 'gun' | 'msl' | 'bvr' = 'gun';
   private lockedTarget: Combatant | null = null;
   private launchCooldown = 0;
   private prevFiring = false;
@@ -213,6 +217,33 @@ export class FlightSession {
       };
       this.balloon.mesh.position.copy(this.balloon.pos);
       this.scene.add(this.balloon.mesh);
+    }
+
+    if (m.type === 'strike') {
+      // Ground bunker target
+      const bunkerMesh = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.BoxGeometry(14, 5, 14), new THREE.MeshLambertMaterial({ color: 0x777d72, flatShading: true }));
+      base.position.y = 2.5;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(8, 3, 8), new THREE.MeshLambertMaterial({ color: 0x62685e, flatShading: true }));
+      top.position.y = 6.5;
+      bunkerMesh.add(base, top);
+      bunkerMesh.position.set(m.zone.x, groundAtZone, m.zone.z);
+      this.scene.add(bunkerMesh);
+      this.bunker = { mesh: bunkerMesh, pos: bunkerMesh.position.clone().setY(groundAtZone + 4), hp: 10, alive: true };
+
+      // SAM site guarding it
+      const samMesh = new THREE.Group();
+      const sBase = new THREE.Mesh(new THREE.BoxGeometry(6, 2.5, 6), new THREE.MeshLambertMaterial({ color: 0x5a6152, flatShading: true }));
+      sBase.position.y = 1.25;
+      const dish = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 0.5, 10), new THREE.MeshLambertMaterial({ color: 0x8a9182, flatShading: true }));
+      dish.rotation.z = Math.PI / 3;
+      dish.position.y = 4;
+      dish.name = 'samDish';
+      samMesh.add(sBase, dish);
+      const sx = m.zone.x + 900, sz = m.zone.z - 700;
+      samMesh.position.set(sx, this.env.terrainHeight(sx, sz), sz);
+      this.scene.add(samMesh);
+      this.sam = { mesh: samMesh, pos: samMesh.position.clone().addScaledVector(new THREE.Vector3(0, 3, 0), 1), hp: 6, alive: true, cooldown: 6 };
     }
 
     if (m.type === 'escort' && m.route) {
@@ -529,11 +560,19 @@ export class FlightSession {
         this.player.missiles++;
       }
     }
-    if (this.player.missileSpec && this.player.flares < 30) {
+    if (this.player.bvrSpec && this.player.bvrMissiles < 2) {
+      this.bvrRegenTimer -= dt;
+      if (this.bvrRegenTimer <= 0) {
+        this.bvrRegenTimer = 30;
+        this.player.bvrMissiles++;
+      }
+    }
+    if (this.player.missileSpec && (this.player.flares < 30 || this.player.chaff < 30)) {
       this.flareRegenTimer -= dt;
       if (this.flareRegenTimer <= 0) {
         this.flareRegenTimer = 6;
-        this.player.flares++;
+        if (this.player.flares < 30) this.player.flares++;
+        if (this.player.chaff < 30) this.player.chaff++;
       }
     }
   }
@@ -547,7 +586,8 @@ export class FlightSession {
     if (this.input.weaponToggleRequested) {
       this.input.weaponToggleRequested = false;
       if (this.player.missileSpec) {
-        this.selectedWeapon = this.selectedWeapon === 'gun' ? 'msl' : 'gun';
+        this.selectedWeapon = this.selectedWeapon === 'gun' ? 'msl' : this.selectedWeapon === 'msl' ? 'bvr' : 'gun';
+        this.lockedTarget = null;
       }
     }
     if (this.input.lockRequested) {
@@ -556,29 +596,39 @@ export class FlightSession {
     }
     if (this.input.flareRequested) {
       this.input.flareRequested = false;
-      if (this.missileSystem && this.player.flares > 0 && this.flareCooldown <= 0 && this.playerDown === 'flying') {
+      if (this.missileSystem && this.flareCooldown <= 0 && this.playerDown === 'flying') {
         this.flareCooldown = 0.25;
-        this.player.flares--;
-        this.missileSystem.dropFlare(this.player.id, this.player.model.position, this.player.model.velocity);
+        if (this.player.flares > 0) {
+          this.player.flares--;
+          this.missileSystem.dropFlare(this.player.id, this.player.model.position, this.player.model.velocity, 'flare');
+        }
+        if (this.player.chaff > 0) {
+          this.player.chaff--;
+          this.missileSystem.dropFlare(this.player.id, this.player.model.position, this.player.model.velocity, 'chaff');
+        }
       }
     }
 
-    // Maintain / drop the lock
-    if (this.lockedTarget && (!this.lockedTarget.alive || !this.inSeekerEnvelope(this.lockedTarget, 1.0, 9000))) {
+    // Maintain / drop the lock (radar shots hold lock much farther out)
+    const lockRange = this.selectedWeapon === 'bvr' ? 16000 : 9000;
+    if (this.lockedTarget && (!this.lockedTarget.alive || !this.inSeekerEnvelope(this.lockedTarget, 1.0, lockRange))) {
       this.lockedTarget = null;
     }
     // Missiles want a lock — grab one automatically when selected
-    if (this.selectedWeapon === 'msl' && !this.lockedTarget) this.tryLock();
+    if ((this.selectedWeapon === 'msl' || this.selectedWeapon === 'bvr') && !this.lockedTarget) this.tryLock();
 
     // Trigger edge: launch a missile
     const firing = this.playerDown === 'flying' && this.input.firing;
-    if (firing && !this.prevFiring && this.selectedWeapon === 'msl' && this.missileSystem) {
-      if (this.lockedTarget && this.player.missiles > 0 && this.launchCooldown <= 0) {
+    if (firing && !this.prevFiring && this.selectedWeapon !== 'gun' && this.missileSystem) {
+      const bvr = this.selectedWeapon === 'bvr';
+      const spec = bvr ? this.player.bvrSpec : this.player.missileSpec;
+      const count = bvr ? this.player.bvrMissiles : this.player.missiles;
+      if (this.lockedTarget && spec && count > 0 && this.launchCooldown <= 0) {
         this.launchCooldown = 1.0;
-        this.player.missiles--;
+        if (bvr) this.player.bvrMissiles--; else this.player.missiles--;
         const m = this.player.model;
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(m.quaternion);
-        this.missileSystem.launch(this.player.missileSpec!, this.player.id,
+        this.missileSystem.launch(spec, this.player.id,
           m.position.clone().addScaledVector(fwd, 3), fwd, m.velocity, this.lockedTarget.id);
         this.audio?.launch();
       }
@@ -596,13 +646,13 @@ export class FlightSession {
   }
 
   private tryLock(): void {
-    if (!this.player.missileSpec) return;
-    const spec = this.player.missileSpec;
+    const spec: MissileSpec | null = this.selectedWeapon === 'bvr' ? this.player.bvrSpec : this.player.missileSpec;
+    if (!spec) return;
     let best: Combatant | null = null;
     let bestD = Infinity;
     for (const c of this.combatants) {
       if (!c.alive || c.side === this.player.side) continue;
-      if (!this.inSeekerEnvelope(c, spec.seekerConeRad * 0.7, spec.lockRangeM)) continue;
+      if (!this.inSeekerEnvelope(c, Math.min(spec.seekerConeRad * 0.7, 0.5), spec.lockRangeM)) continue;
       const d = c.model.position.distanceToSquared(this.player.model.position);
       if (d < bestD) { bestD = d; best = c; }
     }
@@ -624,13 +674,16 @@ export class FlightSession {
         const dist = to.length();
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(c.model.quaternion);
         const angle = Math.acos(THREE.MathUtils.clamp(to.normalize().dot(fwd), -1, 1));
-        if (dist > 1200 && dist < 5500 && angle < 0.35) {
-          c.missiles--;
+        const bvrShot = c.bvrSpec && c.bvrMissiles > 0 && dist > 4500 && dist < 9500 && angle < 0.25;
+        const irShot = dist > 1200 && dist < 5500 && angle < 0.35 && c.missiles > 0;
+        if (bvrShot || irShot) {
+          const spec = bvrShot ? c.bvrSpec! : c.missileSpec;
+          if (bvrShot) c.bvrMissiles--; else c.missiles--;
           const [cadMin, cadMax] = difficultyParams().missileCadence;
           this.aiMissileCooldown.set(c, cadMin + Math.random() * (cadMax - cadMin));
-          this.missileSystem.launch(c.missileSpec, c.id,
+          this.missileSystem.launch(spec, c.id,
             c.model.position.clone().addScaledVector(fwd, 3), fwd, c.model.velocity, target.id);
-          if (c.model.position.distanceTo(this.player.model.position) < 2500) this.audio?.launch();
+          if (c.model.position.distanceTo(this.player.model.position) < 4000) this.audio?.launch();
         }
       }
 
@@ -639,12 +692,17 @@ export class FlightSession {
       // AI can no longer spoof every missile with a continuous flare stream.
       const fcd = (this.aiFlareCooldown.get(c) ?? 0) - dt;
       this.aiFlareCooldown.set(c, fcd);
-      if (fcd <= 0 && c.flares > 0 && this.missileSystem.inboundFor(c.id)) {
+      if (fcd <= 0 && (c.flares > 0 || c.chaff > 0) && this.missileSystem.inboundFor(c.id)) {
         this.aiFlareCooldown.set(c, difficultyParams().flareBurstCooldown);
-        const burst = Math.min(2, c.flares);
-        for (let i = 0; i < burst; i++) {
-          c.flares--;
-          this.missileSystem.dropFlare(c.id, c.model.position, c.model.velocity);
+        for (let i = 0; i < 2; i++) {
+          if (c.flares > 0) {
+            c.flares--;
+            this.missileSystem.dropFlare(c.id, c.model.position, c.model.velocity, 'flare');
+          }
+          if (c.chaff > 0) {
+            c.chaff--;
+            this.missileSystem.dropFlare(c.id, c.model.position, c.model.velocity, 'chaff');
+          }
         }
       }
     }
@@ -675,6 +733,21 @@ export class FlightSession {
     // Missiles
     if (this.missileSystem) {
       this.updateAiWeapons(dt);
+
+      // SAM site: tracks and launches at the player inside its ring
+      if (this.sam?.alive && this.playerDown === 'flying') {
+        this.sam.cooldown -= dt;
+        const dish = this.sam.mesh.getObjectByName('samDish');
+        if (dish) dish.rotation.y += dt * 1.5;
+        const dist = this.sam.pos.distanceTo(this.player.model.position);
+        if (this.sam.cooldown <= 0 && dist < SAM.lockRangeM) {
+          this.sam.cooldown = 13 + Math.random() * 6;
+          const up = this.player.model.position.clone().sub(this.sam.pos).normalize().add(new THREE.Vector3(0, 0.6, 0)).normalize();
+          this.missileSystem.launch(SAM, 998, this.sam.pos.clone().addScaledVector(up, 4), up, new THREE.Vector3(), this.player.id);
+          this.audio?.launch();
+          this.toast('⚠ SAM LAUNCH', 1600);
+        }
+      }
       const views: MissileTargetView[] = this.combatants.map(c => ({
         id: c.id, alive: c.alive, position: c.model.position, velocity: c.model.velocity
       }));
@@ -691,6 +764,41 @@ export class FlightSession {
       targets.push({
         id: c.id, position: c.model.position, radiusM: c.radiusM,
         onHit: (d, by) => this.onCombatantHit(c, d, by)
+      });
+    }
+    if (this.bunker?.alive) {
+      const b = this.bunker;
+      targets.push({
+        id: 997, position: b.pos, radiusM: 10,
+        onHit: d => {
+          b.hp -= d;
+          this.effects.spawn(b.pos.clone(), { size: 4, growth: 6, life: 0.6, color: 0xffcc66, opacity: 0.8 });
+          if (b.hp <= 0 && b.alive) {
+            b.alive = false;
+            this.effects.explosion(b.pos.clone());
+            this.audio?.explosionAt(b.pos.distanceTo(this.player.model.position));
+            b.mesh.visible = false;
+            this.toast('TARGET DESTROYED');
+          }
+        }
+      });
+    }
+    if (this.sam?.alive) {
+      const s = this.sam;
+      targets.push({
+        id: 998, position: s.pos, radiusM: 7,
+        onHit: d => {
+          s.hp -= d;
+          this.effects.spawn(s.pos.clone(), { size: 3, growth: 5, life: 0.5, color: 0xffcc66, opacity: 0.8 });
+          if (s.hp <= 0 && s.alive) {
+            s.alive = false;
+            this.effects.explosion(s.pos.clone());
+            this.audio?.explosionAt(s.pos.distanceTo(this.player.model.position));
+            s.mesh.visible = false;
+            this.kills++;
+            this.toast('SAM DESTROYED');
+          }
+        }
       });
     }
     if (this.balloon?.alive) {
@@ -801,6 +909,7 @@ export class FlightSession {
     let complete = false;
     if (m.type === 'patrol') complete = enemiesDown;
     else if (m.type === 'balloon') complete = !!this.balloon && !this.balloon.alive;
+    else if (m.type === 'strike') complete = !!this.bunker && !this.bunker.alive;
     else if (m.type === 'intercept') {
       // Any striker reaching the base = mission failed.
       for (const c of this.combatants) {
@@ -870,8 +979,9 @@ export class FlightSession {
     if (this.player.missileSpec) {
       info.weapon = {
         kind: this.selectedWeapon,
-        name: this.selectedWeapon === 'gun' ? 'GUN' : this.player.missileSpec.name,
-        missiles: this.player.missiles,
+        name: this.selectedWeapon === 'gun' ? 'GUN'
+          : this.selectedWeapon === 'bvr' ? this.player.bvrSpec!.name : this.player.missileSpec.name,
+        missiles: this.selectedWeapon === 'bvr' ? this.player.bvrMissiles : this.player.missiles,
         flares: this.player.flares,
         locked: !!this.lockedTarget
       };
@@ -879,6 +989,25 @@ export class FlightSession {
       if (inbound) {
         const v = inbound.pos.clone().project(this.camera);
         info.threat = { dirX: v.x, dirY: v.y, behind: v.z >= 1 };
+      } else {
+        // RWR: spike when an enemy radar is on us (nose-on inside its range)
+        for (const c of this.combatants) {
+          if (!c.alive || c.side === this.player.side || !c.bvrSpec) continue;
+          const to = this.player.model.position.clone().sub(c.model.position);
+          const dist = to.length();
+          if (dist > 11000) continue;
+          const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(c.model.quaternion);
+          if (to.normalize().dot(fwd) > Math.cos(0.3)) {
+            const v = c.model.position.clone().project(this.camera);
+            info.rwr = { dirX: v.x, dirY: v.y, behind: v.z >= 1 };
+            break;
+          }
+        }
+        if (!info.rwr && this.sam?.alive &&
+            this.sam.pos.distanceTo(this.player.model.position) < SAM.lockRangeM * 1.2) {
+          const v = this.sam.pos.clone().project(this.camera);
+          info.rwr = { dirX: v.x, dirY: v.y, behind: v.z >= 1 };
+        }
       }
     }
 
@@ -897,6 +1026,7 @@ export class FlightSession {
         this.missionState === 'failed' ? 'Mission failed' :
         m.type === 'patrol' ? `${modern ? 'CAP' : 'Patrol'}: clear the sector (${hostiles} hostile)` :
         m.type === 'balloon' ? 'Destroy the observation balloon' :
+        m.type === 'strike' ? `Strike: destroy the bunker${this.sam?.alive ? ' (SAM active)' : ''}` :
         m.type === 'intercept' ? `Intercept: stop the strikers (${hostiles} inbound)` :
         modern ? 'Protect the strike package' : 'Escort the two-seater';
       info.mission = {

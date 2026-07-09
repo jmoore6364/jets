@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { MissileSystem, AIM9, type MissileTargetView, type FxSink } from '../src/engine/combat/missiles';
+import { MissileSystem, AIM9, AIM120, type MissileTargetView, type FxSink } from '../src/engine/combat/missiles';
 
 const fx: FxSink = { spawn: () => undefined, explosion: () => undefined };
 const flat = () => -10000;
@@ -75,5 +75,40 @@ describe('IR missiles', () => {
       sys.update(dt, [target], flat, (id, dmg) => { if (id === 1) hits += dmg; });
     }
     expect(hits).toBeGreaterThan(0);
+  });
+});
+
+describe('radar missiles', () => {
+  it('ignores flares entirely — only chaff seduces a radar seeker', () => {
+    // rng = 1: every matching decoy roll seduces. Flares still must not.
+    const sys = new MissileSystem(new THREE.Scene(), fx, () => 1);
+    const target = makeTarget(1, [0, 0, -6000], [0, 0, -10]);
+    let hits = 0;
+    const dt = 1 / 120;
+    sys.launch(AIM120, 0, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, -250), 1);
+    let flareTimer = 0;
+    for (let t = 0; t < 14; t += dt) {
+      target.position.addScaledVector(target.velocity, dt);
+      flareTimer -= dt;
+      if (flareTimer <= 0) { flareTimer = 0.5; sys.dropFlare(1, target.position, target.velocity, 'flare'); }
+      sys.update(dt, [target], flat, (id, dmg) => { if (id === 1) hits += dmg; });
+    }
+    expect(hits).toBeGreaterThan(0); // flew straight through the flare wall
+  });
+
+  it('is seduced by chaff when the resistance roll fails', () => {
+    const sys = new MissileSystem(new THREE.Scene(), fx, () => 1); // rng 1: chaff always seduces
+    const target = makeTarget(1, [0, 0, -6000], [0, 0, -10]);
+    let hits = 0;
+    const dt = 1 / 120;
+    sys.launch(AIM120, 0, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, -250), 1);
+    let chaffTimer = 0;
+    for (let t = 0; t < 14; t += dt) {
+      target.position.addScaledVector(target.velocity, dt);
+      chaffTimer -= dt;
+      if (chaffTimer <= 0) { chaffTimer = 0.5; sys.dropFlare(1, target.position, target.velocity, 'chaff'); }
+      sys.update(dt, [target], flat, id => { if (id === 1) hits++; });
+    }
+    expect(hits).toBe(0);
   });
 });

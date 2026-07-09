@@ -9,7 +9,7 @@ import { ArcadeFlightModel } from '../engine/flight/arcadeModel';
 import type { FlightBody } from '../engine/flight/flightBody';
 import { buildAircraftMesh } from '../world/aircraftMesh';
 import { Gun, WWI_TWIN_MG, M61_VULCAN, type GunSpec } from '../engine/combat/projectiles';
-import { AIM9, R73, type MissileSpec } from '../engine/combat/missiles';
+import { AIM9, R73, AIM120, R77, type MissileSpec } from '../engine/combat/missiles';
 import type { EffectsPool } from '../world/effects';
 
 export function gunFor(spec: AircraftSpec): GunSpec {
@@ -31,8 +31,12 @@ export class Combatant {
 
   /** IR missile loadout (modern era only). */
   readonly missileSpec: MissileSpec | null;
+  /** Radar missile loadout (modern era only). */
+  readonly bvrSpec: MissileSpec | null;
   missiles = 0;
+  bvrMissiles = 0;
   flares = 0;
+  chaff = 0;
 
   private smokeTimer = 0;
 
@@ -52,13 +56,16 @@ export class Combatant {
     this.maxHp = hitPointsFor(spec);
     this.hp = this.maxHp;
     this.missileSpec = spec.era === 'modern' ? (spec.id === 'mig29' ? R73 : AIM9) : null;
+    this.bvrSpec = spec.era === 'modern' ? (spec.id === 'mig29' ? R77 : AIM120) : null;
     this.rearm();
   }
 
   private rearm(): void {
     if (this.missileSpec) {
       this.missiles = 4;
+      this.bvrMissiles = 2;
       this.flares = 30;
+      this.chaff = 30;
     }
   }
 
