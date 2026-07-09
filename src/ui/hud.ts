@@ -223,7 +223,9 @@ export class ModernHud extends CanvasHud {
     if (combat.weapon) {
       const wp = combat.weapon;
       const sel = wp.kind === 'gun' ? `GUN ${combat.ammo}` : `${wp.name} ×${wp.missiles}`;
+      if (wp.kind === 'gun' && combat.ammo < 120) c.fillStyle = 'rgba(255,120,60,0.95)';
       c.fillText(sel, spdX - 8, boxY + 82);
+      c.fillStyle = GREEN;
       c.fillStyle = GREEN_DIM;
       c.fillText(`FLR ${wp.flares}`, spdX - 8, boxY + 102);
       c.fillStyle = GREEN;

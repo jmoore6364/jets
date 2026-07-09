@@ -80,6 +80,16 @@ describe('gun', () => {
   });
 });
 
+describe('gun regeneration (arcade resupply)', () => {
+  it('refills the belt off-trigger, capped at the magazine', () => {
+    const gun = new Gun(M61_VULCAN);
+    gun.ammo = 0;
+    const dt = 1 / 60;
+    for (let t = 0; t < 20; t += dt) gun.regenerate(dt, 35);
+    expect(gun.ammo).toBe(M61_VULCAN.magazine); // 511 in ~15s
+  });
+});
+
 describe('AI pilot', () => {
   it('turns toward its target', () => {
     const me = new FlightModel(F16);

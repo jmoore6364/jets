@@ -190,6 +190,19 @@ export class Gun {
     this.cooldown = 0;
   }
 
+  private regenFrac = 0;
+
+  /** Arcade nicety: belts refill while the trigger is released. */
+  regenerate(dt: number, roundsPerSec: number): void {
+    if (this.ammo >= this.spec.magazine) return;
+    this.regenFrac += roundsPerSec * dt;
+    const whole = Math.floor(this.regenFrac);
+    if (whole > 0) {
+      this.regenFrac -= whole;
+      this.ammo = Math.min(this.spec.magazine, this.ammo + whole);
+    }
+  }
+
   /** Call every frame; spawns rounds while trigger held. */
   update(
     dt: number, firing: boolean, ownerId: number,

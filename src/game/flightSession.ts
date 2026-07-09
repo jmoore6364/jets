@@ -72,6 +72,10 @@ export class FlightSession {
   /** Black box: last ~30s of flight data, dumped with K for bug reports. */
   private blackBox: object[] = [];
   private blackBoxTimer = 0;
+  /** Arcade resupply timers. */
+  private gunRegenDelay = 0;
+  private missileRegenTimer = 20;
+  private flareRegenTimer = 6;
   private chasePos = new THREE.Vector3();
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
@@ -280,6 +284,7 @@ export class FlightSession {
       this.dumpBlackBox();
     }
     this.recordBlackBox(dt);
+    this.updateArcadeResupply(dt);
     this.handleWeaponInputs(dt);
 
     if (this.playerDown === 'flying') this.input.update(this.player.model.controls, dt);
@@ -400,6 +405,33 @@ export class FlightSession {
     note.textContent = 'FLIGHT DATA SAVED (copied + downloaded) — paste it to Claude';
     document.getElementById('ui')?.appendChild(note);
     setTimeout(() => note.remove(), 3500);
+  }
+
+  /** Arcade mode: belts refill off-trigger, missiles and flares restock slowly.
+   *  Sim mode carries what it carries. */
+  private updateArcadeResupply(dt: number): void {
+    if (getHandling() !== 'arcade' || this.playerDown !== 'flying') return;
+
+    const firingGun = this.input.firing && this.selectedWeapon === 'gun';
+    this.gunRegenDelay = firingGun ? 1.2 : Math.max(0, this.gunRegenDelay - dt);
+    if (!firingGun && this.gunRegenDelay <= 0) {
+      this.player.gun.regenerate(dt, this.player.spec.era === 'modern' ? 35 : 12);
+    }
+
+    if (this.player.missileSpec && this.player.missiles < 4) {
+      this.missileRegenTimer -= dt;
+      if (this.missileRegenTimer <= 0) {
+        this.missileRegenTimer = 20;
+        this.player.missiles++;
+      }
+    }
+    if (this.player.missileSpec && this.player.flares < 30) {
+      this.flareRegenTimer -= dt;
+      if (this.flareRegenTimer <= 0) {
+        this.flareRegenTimer = 6;
+        this.player.flares++;
+      }
+    }
   }
 
   // ---------------- Modern weapons ----------------
