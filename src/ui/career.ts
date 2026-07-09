@@ -11,6 +11,7 @@ import {
   applyMissionOutcome, rankOf, formatDate, dynastyLegacy, wwiFounderAce,
   type Dynasty, type Side, type Consequences
 } from '../career/dynasty';
+import { LEGACY_UNLOCKS, availableLegacy, buyUnlock, hasUnlock } from '../career/legacyShop';
 import { generateMission, type Mission } from '../game/mission';
 import type { SessionResult } from '../game/flightSession';
 
@@ -119,8 +120,46 @@ export class CareerUI {
       ${history}
       <div class="career-actions">
         <button data-act="fly" class="primary">FLY NEXT MISSION</button>
+        <button data-act="shop">LEGACY · ${availableLegacy(d)} PTS</button>
         <button data-act="exit">MAIN MENU</button>
       </div>`;
+    this.bind();
+  }
+
+  /** The Legacy Shop: spend the family's shared points on permanent perks. */
+  private showShop(): void {
+    const d = this.dynasty!;
+    const avail = availableLegacy(d);
+    const rows = LEGACY_UNLOCKS.map(u => {
+      const owned = hasUnlock(d, u.id);
+      const affordable = avail >= u.cost;
+      const eraTag = u.era === 'modern' ? '2026' : '1917 + 2026';
+      const action = owned
+        ? '<span class="shop-owned">OWNED</span>'
+        : `<button data-buy="${u.id}" ${affordable ? '' : 'disabled'}>${u.cost} PTS</button>`;
+      return `
+        <div class="shop-item ${owned ? 'owned' : ''}">
+          <div class="shop-info">
+            <div class="shop-name">${u.name} <small>· ${eraTag}</small></div>
+            <div class="shop-desc">${u.desc}</div>
+          </div>
+          <div class="shop-buy">${action}</div>
+        </div>`;
+    }).join('');
+
+    this.root.innerHTML = `
+      <h2 class="career-h">THE FAMILY LEGACY</h2>
+      <p class="career-sub">Every victory and every mission flown by the ${d.surname} line earns legacy.
+        Spend it on advantages that pass down the generations — both wars, forever.</p>
+      <div class="pilot-stats shop-balance"><span><b>${avail}</b> legacy available</span></div>
+      <div class="shop-list">${rows}</div>
+      <div class="career-actions"><button data-act="home">BACK</button></div>`;
+
+    this.root.querySelectorAll<HTMLButtonElement>('button[data-buy]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (buyUnlock(d, btn.dataset.buy!)) this.showShop();
+      });
+    });
     this.bind();
   }
 
@@ -195,6 +234,7 @@ export class CareerUI {
         const act = btn.dataset.act;
         if (act === 'exit') this.opts.onExit();
         else if (act === 'home') this.showHome();
+        else if (act === 'shop') this.showShop();
         else if (act === 'fly') this.showBriefing();
         else if (act === 'takeoff' && this.pendingMission) {
           const p = activePilot(this.dynasty!, this.era)!;

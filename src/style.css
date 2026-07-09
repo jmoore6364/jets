@@ -119,6 +119,28 @@ body.in-menu #scene { filter: brightness(0.35); }
 .side-btn small { color: #a89a78; letter-spacing: 0.05em; }
 .era button.career-btn { border-color: rgba(216,180,106,0.7); color: #ffd98a; font-style: normal; }
 
+/* ---------- Legacy shop ---------- */
+.shop-balance { margin-top: 0; }
+.shop-list { display: flex; flex-direction: column; gap: 0.7rem; max-width: 36rem; width: 100%; }
+.shop-item {
+  display: flex; align-items: center; gap: 1rem; text-align: left;
+  border: 1px solid rgba(232,217,176,0.3); border-radius: 5px;
+  background: rgba(40,32,18,0.4); padding: 0.8rem 1.2rem;
+}
+.shop-item.owned { border-color: rgba(140,200,120,0.5); }
+.shop-name { color: #f0e2c4; font-size: 1.05rem; }
+.shop-name small { color: #a89a78; font-size: 0.75rem; letter-spacing: 0.08em; }
+.shop-desc { color: #a89a78; font-size: 0.85rem; line-height: 1.4; margin-top: 0.2rem; }
+.shop-info { flex: 1; }
+.shop-buy button {
+  padding: 0.55rem 1.1rem; background: rgba(255,255,255,0.06); color: #ffd98a;
+  border: 1px solid rgba(232,182,74,0.7); border-radius: 4px; cursor: pointer;
+  font-family: inherit; font-size: 0.8rem; letter-spacing: 0.1em; white-space: nowrap;
+}
+.shop-buy button:hover:not(:disabled) { background: rgba(232,182,74,0.2); }
+.shop-buy button:disabled { opacity: 0.35; cursor: default; }
+.shop-owned { color: #9fd188; font-size: 0.8rem; letter-spacing: 0.12em; }
+
 /* ---------- HUDs ---------- */
 .hud { position: absolute; inset: 0; pointer-events: none; }
 

@@ -37,6 +37,10 @@ export class Combatant {
   bvrMissiles = 0;
   flares = 0;
   chaff = 0;
+  /** Loadout capacities — raised by dynasty legacy unlocks for the player. */
+  missileCap = 4;
+  bvrCap = 2;
+  decoyCap = 30;
 
   private smokeTimer = 0;
 
@@ -62,11 +66,21 @@ export class Combatant {
 
   private rearm(): void {
     if (this.missileSpec) {
-      this.missiles = 4;
-      this.bvrMissiles = 2;
-      this.flares = 30;
-      this.chaff = 30;
+      this.missiles = this.missileCap;
+      this.bvrMissiles = this.bvrCap;
+      this.flares = this.decoyCap;
+      this.chaff = this.decoyCap;
     }
+  }
+
+  /** Apply dynasty legacy perks (player only). Re-arms with the new caps. */
+  applyPerks(p: { hpMult: number; missileCap: number; bvrCap: number; decoyCap: number }): void {
+    this.maxHp = Math.round(hitPointsFor(this.spec) * p.hpMult);
+    this.hp = this.maxHp;
+    this.missileCap = p.missileCap;
+    this.bvrCap = p.bvrCap;
+    this.decoyCap = p.decoyCap;
+    this.rearm();
   }
 
   get spec(): AircraftSpec {

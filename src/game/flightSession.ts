@@ -22,6 +22,8 @@ import { viewportSize } from '../engine/viewport';
 import type { AudioEngine } from '../engine/audio';
 import { getHandling } from './handling';
 import { difficultyParams } from './difficulty';
+import { loadDynasty } from '../career/dynasty';
+import { dynastyPerks, type DynastyPerks } from '../career/legacyShop';
 import type { Mission } from './mission';
 
 const PHYSICS_DT = 1 / 120;
@@ -86,6 +88,8 @@ export class FlightSession {
 
   private paused = false;
   private bestStreak = 0;
+  /** Dynasty legacy unlocks, applied to the player's loadout and airframe. */
+  private perks: DynastyPerks;
   private chasePos = new THREE.Vector3();
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
@@ -132,6 +136,8 @@ export class FlightSession {
     }
 
     this.player = this.addCombatant(spec, 0, getHandling() === 'arcade');
+    this.perks = dynastyPerks(loadDynasty());
+    this.player.applyPerks(this.perks);
     const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
     this.player.respawn(0, alt, 0, spec.cruiseSpeedMs * 1.1, 0);
 
@@ -550,29 +556,30 @@ export class FlightSession {
     const firingGun = this.input.firing && this.selectedWeapon === 'gun';
     this.gunRegenDelay = firingGun ? 1.2 : Math.max(0, this.gunRegenDelay - dt);
     if (!firingGun && this.gunRegenDelay <= 0) {
-      this.player.gun.regenerate(dt, this.player.spec.era === 'modern' ? 35 : 12);
+      this.player.gun.regenerate(dt, (this.player.spec.era === 'modern' ? 35 : 12) * this.perks.gunRegenMult);
     }
 
-    if (this.player.missileSpec && this.player.missiles < 4) {
+    const p = this.player;
+    if (p.missileSpec && p.missiles < p.missileCap) {
       this.missileRegenTimer -= dt;
       if (this.missileRegenTimer <= 0) {
         this.missileRegenTimer = 20;
-        this.player.missiles++;
+        p.missiles++;
       }
     }
-    if (this.player.bvrSpec && this.player.bvrMissiles < 2) {
+    if (p.bvrSpec && p.bvrMissiles < p.bvrCap) {
       this.bvrRegenTimer -= dt;
       if (this.bvrRegenTimer <= 0) {
         this.bvrRegenTimer = 30;
-        this.player.bvrMissiles++;
+        p.bvrMissiles++;
       }
     }
-    if (this.player.missileSpec && (this.player.flares < 30 || this.player.chaff < 30)) {
+    if (p.missileSpec && (p.flares < p.decoyCap || p.chaff < p.decoyCap)) {
       this.flareRegenTimer -= dt;
       if (this.flareRegenTimer <= 0) {
         this.flareRegenTimer = 6;
-        if (this.player.flares < 30) this.player.flares++;
-        if (this.player.chaff < 30) this.player.chaff++;
+        if (p.flares < p.decoyCap) p.flares++;
+        if (p.chaff < p.decoyCap) p.chaff++;
       }
     }
   }
