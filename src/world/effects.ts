@@ -53,13 +53,18 @@ export class EffectsPool {
     (p.sprite.material as THREE.SpriteMaterial).color.setHex(opts.color ?? 0x222222);
   }
 
-  /** Big orange flash + debris smoke. */
+  /** Fireball core, white flash, shock ring, and a debris smoke cluster. */
   explosion(pos: THREE.Vector3): void {
-    this.spawn(pos, { size: 14, growth: 30, life: 0.5, color: 0xffa030, opacity: 0.95 });
-    this.spawn(pos, { size: 8, growth: 18, life: 0.9, color: 0xff5510, opacity: 0.9 });
-    for (let i = 0; i < 6; i++) {
-      const jitter = new THREE.Vector3((Math.random() - 0.5) * 10, Math.random() * 8, (Math.random() - 0.5) * 10);
-      this.spawn(jitter.add(pos), { size: 6, growth: 5, life: 2.5, color: 0x1a1a1a, opacity: 0.6 });
+    this.spawn(pos, { size: 20, growth: 55, life: 0.25, color: 0xffffff, opacity: 1 });   // flash
+    this.spawn(pos, { size: 14, growth: 30, life: 0.55, color: 0xffa030, opacity: 0.95 }); // fireball
+    this.spawn(pos, { size: 8, growth: 20, life: 0.9, color: 0xff5510, opacity: 0.9 });
+    this.spawn(pos, { size: 10, growth: 130, life: 0.45, color: 0xffe0b0, opacity: 0.35 }); // shock ring
+    for (let i = 0; i < 9; i++) {
+      const jitter = new THREE.Vector3((Math.random() - 0.5) * 16, Math.random() * 12 - 2, (Math.random() - 0.5) * 16);
+      this.spawn(jitter.add(pos), {
+        size: 4 + Math.random() * 5, growth: 4 + Math.random() * 4,
+        life: 1.8 + Math.random() * 1.6, color: Math.random() < 0.3 ? 0x553322 : 0x1a1a1a, opacity: 0.6
+      });
     }
   }
 

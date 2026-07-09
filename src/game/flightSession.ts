@@ -78,6 +78,9 @@ export class FlightSession {
   private gunRegenDelay = 0;
   private missileRegenTimer = 20;
   private flareRegenTimer = 6;
+
+  private paused = false;
+  private bestStreak = 0;
   private chasePos = new THREE.Vector3();
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
@@ -133,6 +136,10 @@ export class FlightSession {
     } else {
       this.spawnSkirmishBandit();
     }
+
+    try {
+      this.bestStreak = Number(localStorage.getItem(`jets.best.${spec.era}`)) || 0;
+    } catch { /* private browsing */ }
 
     this.hud = createHud(uiRoot, this.player.model, this.input);
     this.input.attach();
@@ -299,6 +306,15 @@ export class FlightSession {
       this.input.blackBoxRequested = false;
       this.dumpBlackBox();
     }
+    if (this.input.pauseRequested) {
+      this.input.pauseRequested = false;
+      this.paused = !this.paused;
+      this.toast(this.paused ? '⏸ PAUSED — P to resume' : '▶ RESUMED', this.paused ? 60000 : 1200);
+    }
+    if (this.paused) {
+      this.renderer.render(this.scene, this.camera);
+      return true;
+    }
     this.recordBlackBox(dt);
     this.updateArcadeResupply(dt);
     this.handleWeaponInputs(dt);
@@ -334,6 +350,15 @@ export class FlightSession {
       const prop = c.mesh.getObjectByName('propDisc');
       const blipped = c.spec.blipSwitch && c.model.controls.brake;
       if (prop) prop.rotation.z += dt * 40 * (blipped ? 0.05 : c.model.controls.throttle);
+
+      const flash = c.mesh.getObjectByName('muzzleFlash') as THREE.Sprite | undefined;
+      if (flash) {
+        const firing = c === this.player
+          ? this.playerDown === 'flying' && this.input.firing && this.selectedWeapon === 'gun' && c.gun.ammo > 0
+          : !!this.pilots.get(c)?.wantsFire && c.alive && c.gun.ammo > 0;
+        flash.visible = firing && Math.random() > 0.35;
+        if (flash.visible) flash.scale.setScalar(1.2 + Math.random() * 1.2);
+      }
     }
 
     this.updateCamera(dt);
@@ -361,6 +386,32 @@ export class FlightSession {
     this.hud.update(agl, this.cameraMode === 'cockpit', this.combatInfo());
     this.renderer.render(this.scene, this.camera);
     return true;
+  }
+
+  // ---------------- Toasts ----------------
+
+  private toastEl: HTMLElement | null = null;
+
+  private toast(text: string, ms = 2200): void {
+    this.toastEl?.remove();
+    const el = document.createElement('div');
+    el.className = 'kill-toast';
+    el.textContent = text;
+    document.getElementById('ui')?.appendChild(el);
+    this.toastEl = el;
+    setTimeout(() => { if (this.toastEl === el) { el.remove(); this.toastEl = null; } }, ms);
+  }
+
+  private announceKill(): void {
+    const wwi = this.player.spec.era === 'wwi';
+    const lines = wwi
+      ? ['VICTORY!', 'HE GOES DOWN!', 'GOT HIM!']
+      : ['SPLASH ONE!', 'GOOD KILL!', 'BANDIT DOWN!'];
+    this.toast(lines[Math.min(lines.length - 1, Math.floor(Math.random() * lines.length))]);
+    if (this.kills > this.bestStreak) {
+      this.bestStreak = this.kills;
+      try { localStorage.setItem(`jets.best.${this.player.spec.era}`, String(this.bestStreak)); } catch { /* ok */ }
+    }
   }
 
   // ---------------- Black box ----------------
@@ -655,7 +706,10 @@ export class FlightSession {
       return;
     }
     if (wasAlive && !c.alive && c.side !== this.player.side) {
-      if (c.lastHitBy === this.player.id) this.kills++;
+      if (c.lastHitBy === this.player.id) {
+        this.kills++;
+        this.announceKill();
+      }
       this.banditRespawnTimer = 7;
     }
   }
@@ -678,7 +732,10 @@ export class FlightSession {
       if (c.alive) this.audio?.explosionAt(pos.distanceTo(this.player.model.position));
       if (c.alive) {
         c.kill();
-        if (c.side !== this.player.side) this.kills++;
+        if (c.side !== this.player.side) {
+          this.kills++;
+          this.announceKill();
+        }
         this.banditRespawnTimer = 7;
       }
       this.effects.explosion(pos.clone());
@@ -740,6 +797,7 @@ export class FlightSession {
     const info: CombatInfo = {
       ammo: this.player.gun.ammo,
       kills: this.kills,
+      best: this.bestStreak,
       hpFrac: Math.max(0, this.player.hp / this.player.maxHp)
     };
 

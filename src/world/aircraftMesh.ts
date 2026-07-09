@@ -1,6 +1,8 @@
 /**
- * Placeholder low-poly aircraft, built from primitives. Nose points -Z to
- * match the flight model's body frame. Real models come in a later milestone.
+ * Procedural aircraft, built from primitives but shaped to be recognizable:
+ * the Viper's bubble canopy and chin intake, the Fulcrum's twin canted tails,
+ * the Dr.I's stacked triplane wall, the Camel's humped cowl and roundels.
+ * Nose points -Z to match the flight model's body frame.
  */
 import * as THREE from 'three';
 import type { AircraftSpec } from '../engine/flight/aircraft';
@@ -13,115 +15,219 @@ function box(w: number, h: number, d: number, color: number): THREE.Mesh {
   return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
 }
 
-/** WWI: fuselage + 2-3 stacked wings + strut posts + tail. */
+/** Shear a box along +Z proportional to |x| — instant swept wing. */
+function sweptWing(span: number, thickness: number, chord: number, sweep: number, color: number): THREE.Mesh {
+  const geo = new THREE.BoxGeometry(span, thickness, chord);
+  const p = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    p.setZ(i, p.getZ(i) + Math.abs(p.getX(i)) * sweep);
+    // taper: outboard chord shrinks
+    const t = 1 - Math.abs(p.getX(i)) / (span / 2) * 0.45;
+    p.setZ(i, p.getZ(i) * Math.max(t, 0.4) + Math.abs(p.getX(i)) * sweep * 0.25);
+  }
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, mat(color));
+}
+
+function muzzleFlash(): THREE.Sprite {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({
+    color: 0xffdd88, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  s.scale.setScalar(1.6);
+  s.visible = false;
+  s.name = 'muzzleFlash';
+  return s;
+}
+
+/* ------------------------------- WWI ------------------------------- */
+
 function buildWwi(spec: AircraftSpec): THREE.Group {
   const g = new THREE.Group();
   const isDr1 = spec.id === 'fokker-dr1';
-  const paint = isDr1 ? 0xb02020 : 0xa08a52; // Richthofen red / PC10 khaki
+  const paint = isDr1 ? 0xb02020 : 0x9a8449;
   const wingCount = isDr1 ? 3 : 2;
   const span = spec.wingSpanM;
 
-  const fuselage = box(0.9, 0.95, 5.6, paint);
-  fuselage.position.set(0, 0, 0.4);
-  g.add(fuselage);
-
-  for (let i = 0; i < wingCount; i++) {
-    const wing = box(span - i * 0.6, 0.12, 1.5, paint);
-    wing.position.set(0, -0.25 + i * 0.85, -0.6);
-    g.add(wing);
+  // Fuselage: nose box + tapering rear
+  const noseSec = box(0.95, 1.0, 2.4, paint);
+  noseSec.position.set(0, 0, -1.2);
+  g.add(noseSec);
+  const rearGeo = new THREE.BoxGeometry(0.9, 0.95, 3.6);
+  const rp = rearGeo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < rp.count; i++) {
+    if (rp.getZ(i) > 1) { rp.setX(i, rp.getX(i) * 0.35); rp.setY(i, rp.getY(i) * 0.45); }
   }
-  // Interplane struts
-  for (const sx of [-span * 0.35, span * 0.35]) {
-    const strut = box(0.08, wingCount * 0.85, 0.08, 0x4a3b28);
-    strut.position.set(sx, 0.15, -0.6);
+  rearGeo.computeVertexNormals();
+  const rear = new THREE.Mesh(rearGeo, mat(paint));
+  rear.position.set(0, 0.02, 1.8);
+  g.add(rear);
+
+  // Wings (staggered like the real airframes)
+  for (let i = 0; i < wingCount; i++) {
+    const wing = box(span - i * 0.5, 0.13, 1.45, paint);
+    wing.position.set(0, -0.35 + i * 0.85, -0.7 - i * 0.18);
+    g.add(wing);
+    if (spec.id === 'sopwith-camel' && i === wingCount - 1) {
+      // RAF roundels on the top wing
+      for (const sx of [-span * 0.32, span * 0.32]) {
+        const r1 = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16), mat(0x1a3a8a));
+        r1.rotation.x = -Math.PI / 2; r1.position.set(sx, 0.075, -0.7 - i * 0.18);
+        const r2 = new THREE.Mesh(new THREE.CircleGeometry(0.32, 16), mat(0xf0f0f0));
+        r2.rotation.x = -Math.PI / 2; r2.position.set(sx, 0.078, r1.position.z);
+        const r3 = new THREE.Mesh(new THREE.CircleGeometry(0.15, 16), mat(0xb02020));
+        r3.rotation.x = -Math.PI / 2; r3.position.set(sx, 0.081, r1.position.z);
+        g.add(r1, r2, r3);
+      }
+    }
+  }
+  for (const sx of [-span * 0.34, span * 0.34]) {
+    const strut = box(0.07, (wingCount - 1) * 0.85 + 0.2, 0.07, 0x4a3b28);
+    strut.position.set(sx, -0.35 + (wingCount - 1) * 0.425, -0.7);
     g.add(strut);
   }
 
-  const tailplane = box(2.6, 0.1, 1.1, paint);
-  tailplane.position.set(0, 0.1, 3.0);
+  // Tail
+  const tailplane = box(2.5, 0.09, 1.05, paint);
+  tailplane.position.set(0, 0.12, 3.1);
   g.add(tailplane);
-  const fin = box(0.1, 0.9, 1.0, paint);
-  fin.position.set(0, 0.55, 3.1);
+  const finGeo = new THREE.BoxGeometry(0.09, 1.0, 1.05);
+  const fp = finGeo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < fp.count; i++) fp.setZ(i, fp.getZ(i) + Math.max(0, fp.getY(i)) * 0.5);
+  finGeo.computeVertexNormals();
+  const fin = new THREE.Mesh(finGeo, mat(isDr1 ? 0xf0f0f0 : paint));
+  fin.name = 'fin';
+  fin.position.set(0, 0.6, 3.2);
   g.add(fin);
 
-  // Cowling + prop disc
-  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.5, 0.6, 10), mat(0x777777));
+  // Round cowl + prop
+  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.52, 0.7, 12), mat(0x6e6e72));
   cowl.rotation.x = Math.PI / 2;
-  cowl.position.set(0, 0, -2.6);
+  cowl.position.set(0, 0, -2.65);
   g.add(cowl);
   const prop = new THREE.Mesh(
-    new THREE.CircleGeometry(1.3, 20),
-    new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
+    new THREE.CircleGeometry(1.35, 24),
+    new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.22, side: THREE.DoubleSide })
   );
-  prop.position.set(0, 0, -2.95);
+  prop.position.set(0, 0, -3.05);
   prop.name = 'propDisc';
   g.add(prop);
+
+  // Undercarriage
+  for (const sx of [-0.55, 0.55]) {
+    const leg = box(0.06, 0.7, 0.06, 0x4a3b28);
+    leg.position.set(sx, -0.8, -1.0);
+    g.add(leg);
+  }
+  const axleWing = box(1.4, 0.08, 0.5, paint);
+  axleWing.position.set(0, -1.12, -1.0);
+  g.add(axleWing);
+
+  const flash = muzzleFlash();
+  flash.position.set(0, 0.45, -2.2);
+  g.add(flash);
 
   return g;
 }
 
-/** Modern: pointed nose, blended body, swept delta-ish wing, single fin. */
+/* ------------------------------ MODERN ------------------------------ */
+
 function buildModern(spec: AircraftSpec): THREE.Group {
   const g = new THREE.Group();
-  const gray = spec.id === 'mig29' ? 0x5d6b75 : 0x8b95a1; // Fulcrum wears darker camo
+  const mig = spec.id === 'mig29';
+  const skin = mig ? 0x5d6b75 : 0x8b95a1;
+  const dark = mig ? 0x46525b : 0x77808c;
 
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.5, 10, 8), mat(gray));
-  body.rotation.x = Math.PI / 2;
-  body.position.z = 0.5;
+  // Fuselage: tapered central body
+  const bodyGeo = new THREE.CylinderGeometry(0.62, 0.55, 9.6, 10);
+  bodyGeo.rotateX(Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeo, mat(skin));
+  body.position.z = 0.4;
   g.add(body);
 
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.62, 2.6, 8), mat(gray));
+  // Nose cone
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.6, 2.8, 10), mat(skin));
   nose.rotation.x = -Math.PI / 2;
-  nose.position.z = -5.8;
+  nose.position.z = -5.7;
   g.add(nose);
 
-  // Swept wing: shear a flat box back along +Z
-  const wingGeo = new THREE.BoxGeometry(9.4, 0.16, 3.4);
-  const wp = wingGeo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < wp.count; i++) {
-    wp.setZ(i, wp.getZ(i) + Math.abs(wp.getX(i)) * 0.55);
-  }
-  wingGeo.computeVertexNormals();
-  const wing = new THREE.Mesh(wingGeo, mat(gray));
-  wing.position.set(0, -0.1, 0.2);
-  g.add(wing);
-
-  const stabGeo = new THREE.BoxGeometry(4.4, 0.12, 1.6);
-  const sp = stabGeo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < sp.count; i++) sp.setZ(i, sp.getZ(i) + Math.abs(sp.getX(i)) * 0.5);
-  stabGeo.computeVertexNormals();
-  const stab = new THREE.Mesh(stabGeo, mat(gray));
-  stab.position.set(0, 0, 4.6);
-  g.add(stab);
-
-  const finGeo = new THREE.BoxGeometry(0.14, 2.6, 2.2);
-  const fp = finGeo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < fp.count; i++) fp.setZ(i, fp.getZ(i) + Math.max(0, fp.getY(i)) * 0.9);
-  finGeo.computeVertexNormals();
-  const fin = new THREE.Mesh(finGeo, mat(spec.id === 'mig29' ? 0x4d5a63 : 0x77808c));
-  fin.name = 'fin';
-  fin.position.set(0, 1.4, 3.9);
-  g.add(fin);
-
-  // Canopy
+  // Bubble canopy
   const canopy = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55, 10, 8),
+    new THREE.SphereGeometry(0.58, 12, 8),
     new THREE.MeshLambertMaterial({ color: 0x2a3d55 })
   );
-  canopy.scale.set(0.9, 0.7, 1.8);
-  canopy.position.set(0, 0.5, -2.6);
+  canopy.scale.set(0.85, 0.75, 2.0);
+  canopy.position.set(0, 0.55, -2.9);
   g.add(canopy);
 
-  // Afterburner glow (toggled by the session)
+  if (mig) {
+    // Twin shoulder-mounted nacelles
+    for (const sx of [-0.75, 0.75]) {
+      const nacGeo = new THREE.CylinderGeometry(0.42, 0.4, 6.2, 8);
+      nacGeo.rotateX(Math.PI / 2);
+      const nac = new THREE.Mesh(nacGeo, mat(dark));
+      nac.position.set(sx, -0.25, 2.0);
+      g.add(nac);
+    }
+  } else {
+    // Viper chin intake
+    const intakeGeo = new THREE.CylinderGeometry(0.42, 0.46, 2.6, 8);
+    intakeGeo.rotateX(Math.PI / 2);
+    const intake = new THREE.Mesh(intakeGeo, mat(dark));
+    intake.position.set(0, -0.55, -1.0);
+    g.add(intake);
+  }
+
+  // Main wing
+  const wing = sweptWing(9.6, 0.16, 3.6, 0.55, skin);
+  wing.position.set(0, -0.08, 0.6);
+  g.add(wing);
+
+  // Wingtip missiles
+  for (const sx of [-4.7, 4.7]) {
+    const mslGeo = new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6);
+    mslGeo.rotateX(Math.PI / 2);
+    const msl = new THREE.Mesh(mslGeo, mat(0xe8e8e8));
+    msl.position.set(sx, -0.08, 1.0);
+    g.add(msl);
+  }
+
+  // Horizontal stabs
+  const stab = sweptWing(4.6, 0.12, 1.8, 0.5, skin);
+  stab.position.set(0, -0.05, 4.7);
+  g.add(stab);
+
+  // Tail(s)
+  const makeFin = (sx: number, cant: number) => {
+    const finGeo = new THREE.BoxGeometry(0.12, 2.5, 2.1);
+    const fp = finGeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < fp.count; i++) fp.setZ(i, fp.getZ(i) + Math.max(0, fp.getY(i)) * 0.85);
+    finGeo.computeVertexNormals();
+    const fin = new THREE.Mesh(finGeo, mat(dark));
+    fin.name = 'fin';
+    fin.position.set(sx, 1.3, 3.9);
+    fin.rotation.z = cant;
+    return fin;
+  };
+  if (mig) {
+    g.add(makeFin(-0.75, 0.16), makeFin(0.75, -0.16));
+  } else {
+    g.add(makeFin(0, 0));
+  }
+
+  // Afterburner flame
   const ab = new THREE.Mesh(
-    new THREE.ConeGeometry(0.45, 2.2, 8),
+    new THREE.ConeGeometry(0.45, 2.4, 8),
     new THREE.MeshBasicMaterial({ color: 0xff7722, transparent: true, opacity: 0.85 })
   );
-  ab.rotation.x = Math.PI / 2; // flame tip aft (+Z)
-  ab.position.set(0, 0, 6.6);
+  ab.rotation.x = Math.PI / 2;
+  ab.position.set(0, 0, 6.7);
   ab.visible = false;
   ab.name = 'abFlame';
   g.add(ab);
+
+  const flash = muzzleFlash();
+  flash.position.set(-0.45, 0.1, -4.6); // port-side cannon, like the real Viper
+  g.add(flash);
 
   return g;
 }

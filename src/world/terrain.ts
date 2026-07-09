@@ -100,6 +100,34 @@ export function buildEnvironment(era: Era): EraEnvironment {
   const sun = new THREE.DirectionalLight(0xffffff, era === 'modern' ? 2.6 : 1.9);
   sun.position.set(-3000, 5000, -2000);
   group.add(sun);
+
+  // Visible sun disc + glow, far along the light direction
+  const sunDir = sun.position.clone().normalize();
+  const mkGlow = (size: number, opacity: number, color: number) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+    }));
+    s.position.copy(sunDir).multiplyScalar(18000);
+    s.scale.setScalar(size);
+    return s;
+  };
+  group.add(mkGlow(2600, 0.9, 0xfff3d0), mkGlow(7000, 0.28, era === 'modern' ? 0xffe9b0 : 0xf5e6c8));
+
+  // Cloud layer: soft static billboards drifting over the map
+  const cloudBase = era === 'modern' ? 2400 : 1100;
+  for (let i = 0; i < 26; i++) {
+    const c1 = new THREE.Sprite(new THREE.SpriteMaterial({
+      color: 0xffffff, transparent: true, depthWrite: false,
+      opacity: 0.28 + hash2(i, 7) * 0.22
+    }));
+    c1.position.set(
+      (hash2(i, 1) - 0.5) * SIZE * 0.9,
+      cloudBase + hash2(i, 2) * 900,
+      (hash2(i, 3) - 0.5) * SIZE * 0.9
+    );
+    c1.scale.set(500 + hash2(i, 4) * 700, 130 + hash2(i, 5) * 160, 1);
+    group.add(c1);
+  }
   const hemi = new THREE.HemisphereLight(
     era === 'modern' ? 0xbfd8ff : 0xcfd8d0,
     era === 'modern' ? 0x8a6f4f : 0x3d4a2f,

@@ -21,6 +21,8 @@ const R2D = 180 / Math.PI;
 export interface CombatInfo {
   ammo: number;
   kills: number;
+  /** Best skirmish streak (persisted). */
+  best?: number;
   /** Player airframe health, 0..1. */
   hpFrac: number;
   target?: {
@@ -326,7 +328,7 @@ export class ModernHud extends CanvasHud {
     c.font = '14px Consolas, Menlo, monospace';
     c.textAlign = 'right';
     c.fillStyle = GREEN;
-    c.fillText(`KILLS ${combat.kills}`, w - 24, 28);
+    c.fillText(`KILLS ${combat.kills}${combat.best ? ` · BEST ${combat.best}` : ''}`, w - 24, 28);
     if (combat.hpFrac < 1) {
       c.fillStyle = combat.hpFrac > 0.5 ? GREEN_DIM : 'rgba(255,90,60,0.9)';
       c.fillText(`AIRFRAME ${Math.round(combat.hpFrac * 100)}%`, w - 24, 48);
