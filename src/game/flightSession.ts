@@ -13,6 +13,7 @@ import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
 import { MissileSystem, type MissileTargetView } from '../engine/combat/missiles';
 import { AiPilot, RoutePilot, StrikerPilot } from '../engine/ai/pilot';
+import { FlightModel } from '../engine/flight/flightModel';
 import { Combatant, gunFor } from './combatant';
 import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
 import { MIG29 } from '../era/modern/aircraft';
@@ -143,7 +144,10 @@ export class FlightSession {
   }
 
   private addCombatant(spec: AircraftSpec, side: number, arcade = false): Combatant {
+    const isPlayer = this.combatants.length === 0;
     const c = new Combatant(this.nextId++, this.scene, spec, this.effects, side, arcade);
+    // FCS pilot assists are for human hands only — they fight AI controllers.
+    if (!isPlayer && c.model instanceof FlightModel) c.model.assists = false;
     this.combatants.push(c);
     return c;
   }

@@ -18,8 +18,13 @@ export function steerToward(me: FlightBody, point: THREE.Vector3, gain = 1): voi
   _q.copy(me.quaternion).invert();
   const dirB = _dir.copy(point).sub(me.position).normalize().applyQuaternion(_q);
   const rollErr = Math.atan2(dirB.x, dirB.y);
+  // Near the boresight, atan2(x, y) is numerically wild (both components ~0)
+  // and commands full roll reversals every frame. Only roll to align the
+  // lift vector when the target is meaningfully off-axis.
+  const offAxis = Math.hypot(dirB.x, dirB.y);
+  const rollWeight = THREE.MathUtils.clamp((offAxis - 0.03) / 0.12, 0, 1);
   const alignment = Math.cos(rollErr);
-  c.roll = THREE.MathUtils.clamp(rollErr * 1.6 * gain, -1, 1);
+  c.roll = THREE.MathUtils.clamp(rollErr * 1.6 * gain, -1, 1) * rollWeight;
   c.pitch = THREE.MathUtils.clamp(Math.atan2(dirB.y, -dirB.z) * 3.5 * gain * Math.max(0.15, alignment), -1, 1);
   c.yaw = THREE.MathUtils.clamp(dirB.x * 0.6, -0.4, 0.4);
 }
@@ -181,8 +186,10 @@ export class AiPilot {
 
     // --- Pursue: roll the lift vector onto the target, then pull ---
     const rollErr = Math.atan2(dirB.x, dirB.y);
+    const offAxis = Math.hypot(dirB.x, dirB.y);
+    const rollWeight = THREE.MathUtils.clamp((offAxis - 0.03) / 0.12, 0, 1); // no thrashing near boresight
     const alignment = Math.cos(rollErr); // 1 = target above canopy
-    c.roll = THREE.MathUtils.clamp(rollErr * 1.6, -1, 1);
+    c.roll = THREE.MathUtils.clamp(rollErr * 1.6, -1, 1) * rollWeight;
     c.pitch = THREE.MathUtils.clamp(Math.atan2(dirB.y, -dirB.z) * 3.5 * Math.max(0.15, alignment), -this.maxPull, this.maxPull);
     c.yaw = THREE.MathUtils.clamp(dirB.x * 0.6, -0.4, 0.4);
 

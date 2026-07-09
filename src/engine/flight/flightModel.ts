@@ -103,6 +103,13 @@ export class FlightModel {
 
   /** Smoothed G rate-of-change, used by the FBW limiter for lead anticipation. */
   private gRate = 0;
+  /**
+   * Pilot assists (attitude/bank hold, level-turn assist) are for human
+   * hands with neutral sticks. AI pilots command continuously — the assists
+   * fight their controllers and cause flip-flopping. AI models set false.
+   */
+  assists = true;
+
   /** Bank angle latched by the FCS when the roll stick goes neutral. */
   private heldBank: number | null = null;
   /** Pitch attitude latched by the FCS when the pitch stick goes neutral. */
@@ -163,7 +170,7 @@ export class FlightModel {
       // your angle doesn't cancel the turn the bank is flying. The hold
       // supplies exactly the body pitch rate a steady heading change needs,
       // and corrects attitude error on top of it.
-      const pitchNeutral = Math.abs(pitchCmd) < 0.05;
+      const pitchNeutral = Math.abs(pitchCmd) < 0.05 && this.assists;
       if (pitchNeutral) {
         const upright = Math.abs(this.lastSample.bankRad) < 1.75 && Math.abs(this.lastSample.pitchRad) < 1.3;
         if (this.heldPitch === null || !upright) {
@@ -193,7 +200,7 @@ export class FlightModel {
       // stick free it latches your bank angle and holds it (rate-only near
       // the vertical, where bank is ill-defined).
       let targetRollRate: number; // body ωz; roll right = negative
-      if (Math.abs(rollCmd) < 0.05) {
+      if (Math.abs(rollCmd) < 0.05 && this.assists) {
         // Level-turn assist: pulling while banked means "turn". Deepen the
         // held bank to match the G being pulled, so the pull carves flat
         // around the horizon instead of ballooning into a climb. Wings-level
