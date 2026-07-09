@@ -209,9 +209,12 @@ export class Gun {
     position: THREE.Vector3, quaternion: THREE.Quaternion, velocity: THREE.Vector3,
     projectiles: ProjectileSystem
   ): void {
-    this.cooldown -= dt;
-    if (!firing || this.ammo <= 0) return;
     const interval = 1 / this.spec.rateHz;
+    // Never bank more than one round of "owed" fire time: without this floor,
+    // idle time accumulates and the first trigger tap dumps the whole belt
+    // in a single frame.
+    this.cooldown = Math.max(this.cooldown - dt, -interval);
+    if (!firing || this.ammo <= 0) return;
     while (this.cooldown <= 0 && this.ammo > 0) {
       const off = this.spec.muzzleOffsets[this.muzzleIndex % this.spec.muzzleOffsets.length];
       this.muzzleIndex++;
@@ -221,6 +224,5 @@ export class Gun {
       this.ammo--;
       this.cooldown += interval;
     }
-    if (this.cooldown < -interval) this.cooldown = 0;
   }
 }

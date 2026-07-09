@@ -78,6 +78,20 @@ describe('gun', () => {
     for (let t = 0; t < 60; t += 1 / 120) gun.update(1 / 120, true, 0, pos, q, vel, sys);
     expect(gun.ammo).toBe(0);
   });
+
+  it('idle time never banks a burst: a tap after 60s idle fires ~1 round', () => {
+    const sys = makeSystem();
+    const gun = new Gun(M61_VULCAN);
+    const pos = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const vel = new THREE.Vector3();
+    // cruise for a minute without touching the trigger
+    for (let t = 0; t < 60; t += 1 / 120) gun.update(1 / 120, false, 0, pos, q, vel, sys);
+    // single-frame tap
+    gun.update(1 / 120, true, 0, pos, q, vel, sys);
+    const fired = M61_VULCAN.magazine - gun.ammo;
+    expect(fired).toBeLessThanOrEqual(3); // was: the entire 511-round belt
+  });
 });
 
 describe('gun regeneration (arcade resupply)', () => {
