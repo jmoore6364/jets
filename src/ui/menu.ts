@@ -7,6 +7,7 @@ import { WWI_AIRCRAFT } from '../era/wwi/aircraft';
 import { MODERN_AIRCRAFT } from '../era/modern/aircraft';
 import { isTouchDevice } from './touch';
 import { getHandling, setHandling } from '../game/handling';
+import { getDifficulty, setDifficulty, type Difficulty } from '../game/difficulty';
 
 export class MainMenu {
   private root: HTMLElement;
@@ -29,7 +30,10 @@ export class MainMenu {
           <button class="career-btn" data-era="modern">CAREER — THE LINE CONTINUES</button>
         </section>
       </div>
-      <button class="handling-btn"></button>
+      <div class="settings-row">
+        <button class="handling-btn"></button>
+        <button class="handling-btn difficulty-btn"></button>
+      </div>
       <p class="controls-hint">${isTouchDevice()
         ? 'Right thumb: stick · Left edge: throttle · FIRE / AB / BRK buttons · ☰ menu · a bandit patrols each map'
         : 'W/S pitch · A/D roll · Q/E rudder · Space fire · F weapon · T lock · X flare · Shift/Ctrl throttle · Tab afterburner · B brake/blip · M mouse-fly · V sound · C camera · R respawn · Esc menu'
@@ -62,6 +66,20 @@ export class MainMenu {
     handlingBtn.addEventListener('click', () => {
       setHandling(getHandling() === 'arcade' ? 'sim' : 'arcade');
       renderHandling();
+    });
+
+    const diffBtn = this.root.querySelector('.difficulty-btn') as HTMLButtonElement;
+    const DIFF_LABEL: Record<Difficulty, string> = {
+      rookie: 'ENEMIES: <b>ROOKIE</b> — forgiving foes <small>(click to change)</small>',
+      pilot: 'ENEMIES: <b>PILOT</b> — a fair fight <small>(click to change)</small>',
+      ace: 'ENEMIES: <b>ACE</b> — they want you dead <small>(click to change)</small>'
+    };
+    const renderDiff = () => { diffBtn.innerHTML = DIFF_LABEL[getDifficulty()]; };
+    renderDiff();
+    diffBtn.addEventListener('click', () => {
+      const order: Difficulty[] = ['rookie', 'pilot', 'ace'];
+      setDifficulty(order[(order.indexOf(getDifficulty()) + 1) % order.length]);
+      renderDiff();
     });
 
     container.appendChild(this.root);

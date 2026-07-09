@@ -24,7 +24,7 @@ export interface MissileSpec {
 
 export const AIM9: MissileSpec = {
   name: 'AIM-9', accelMs2: 230, burnS: 5.0, maxSpeedMs: 900, turnG: 35,
-  seekerConeRad: 0.70, lockRangeM: 6000, proxFuseM: 9, damage: 5, flareResistance: 0.60
+  seekerConeRad: 0.70, lockRangeM: 6000, proxFuseM: 9, damage: 5, flareResistance: 0.74
 };
 
 export const R73: MissileSpec = {

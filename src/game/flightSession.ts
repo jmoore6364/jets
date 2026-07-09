@@ -20,6 +20,7 @@ import { TouchControls, isTouchDevice } from '../ui/touch';
 import { viewportSize } from '../engine/viewport';
 import type { AudioEngine } from '../engine/audio';
 import { getHandling } from './handling';
+import { difficultyParams } from './difficulty';
 import type { Mission } from './mission';
 
 const PHYSICS_DT = 1 / 120;
@@ -147,6 +148,14 @@ export class FlightSession {
     return c;
   }
 
+  /** Enemy toughness and stores follow the difficulty setting. */
+  private applyDifficulty(enemy: Combatant): void {
+    const d = difficultyParams();
+    enemy.maxHp = Math.max(2, Math.round(enemy.maxHp * d.hpMult));
+    enemy.hp = enemy.maxHp;
+    enemy.flares = d.flareCount;
+  }
+
   // ---------------- Mission setup ----------------
 
   private setupMission(m: Mission): void {
@@ -170,12 +179,14 @@ export class FlightSession {
         const sx = m.zone.x + away.x * 9000 + (Math.random() - 0.5) * 1500;
         const sz = m.zone.z + away.z * 9000 + (Math.random() - 0.5) * 1500;
         e.respawn(sx, this.env.terrainHeight(sx, sz) + 600, sz, enemySpec.cruiseSpeedMs * 1.1, 0);
-        this.pilots.set(e, new StrikerPilot(zonePos.clone().setY(groundAtZone + 400), gunFor(enemySpec), 0.6));
+        this.pilots.set(e, new StrikerPilot(zonePos.clone().setY(groundAtZone + 400), gunFor(enemySpec), difficultyParams().skill));
+        this.applyDifficulty(e);
       } else {
         const ox = (Math.random() - 0.5) * 800, oz = (Math.random() - 0.5) * 800;
         e.respawn(m.zone.x + ox, groundAtZone + cruiseAlt + Math.random() * 300, m.zone.z + oz,
           enemySpec.cruiseSpeedMs, Math.random() * Math.PI * 2);
-        this.pilots.set(e, new AiPilot(gunFor(enemySpec), 0.6 + Math.random() * 0.15));
+        this.pilots.set(e, new AiPilot(gunFor(enemySpec), difficultyParams().skill + Math.random() * 0.1));
+        this.applyDifficulty(e);
       }
     }
 
@@ -224,7 +235,7 @@ export class FlightSession {
     let bandit = this.combatants.find(c => c !== this.player);
     if (!bandit) {
       bandit = this.addCombatant(spec, 1);
-      this.pilots.set(bandit, new AiPilot(gunFor(spec), 0.65));
+      this.pilots.set(bandit, new AiPilot(gunFor(spec), difficultyParams().skill));
     }
     const dist = spec.era === 'modern' ? 4000 : 1200;
     const p = this.player.model.position;
@@ -233,6 +244,7 @@ export class FlightSession {
     const z = p.z - Math.cos(bearing) * dist;
     const alt = Math.max(p.y + (Math.random() - 0.3) * 400, this.env.terrainHeight(x, z) + 400);
     bandit.respawn(x, alt, z, spec.cruiseSpeedMs, Math.random() * Math.PI * 2);
+    this.applyDifficulty(bandit);
   }
 
   private respawnAll(): void {
@@ -522,7 +534,8 @@ export class FlightSession {
         const angle = Math.acos(THREE.MathUtils.clamp(to.normalize().dot(fwd), -1, 1));
         if (dist > 1200 && dist < 5500 && angle < 0.35) {
           c.missiles--;
-          this.aiMissileCooldown.set(c, 7 + Math.random() * 5);
+          const [cadMin, cadMax] = difficultyParams().missileCadence;
+          this.aiMissileCooldown.set(c, cadMin + Math.random() * (cadMax - cadMin));
           this.missileSystem.launch(c.missileSpec, c.id,
             c.model.position.clone().addScaledVector(fwd, 3), fwd, c.model.velocity, target.id);
           if (c.model.position.distanceTo(this.player.model.position) < 2500) this.audio?.launch();
@@ -530,12 +543,17 @@ export class FlightSession {
       }
 
       // Pop flares while a missile is inbound
+      // Defensive flares come in discrete bursts with a real cooldown — the
+      // AI can no longer spoof every missile with a continuous flare stream.
       const fcd = (this.aiFlareCooldown.get(c) ?? 0) - dt;
       this.aiFlareCooldown.set(c, fcd);
       if (fcd <= 0 && c.flares > 0 && this.missileSystem.inboundFor(c.id)) {
-        this.aiFlareCooldown.set(c, 0.6);
-        c.flares--;
-        this.missileSystem.dropFlare(c.id, c.model.position, c.model.velocity);
+        this.aiFlareCooldown.set(c, difficultyParams().flareBurstCooldown);
+        const burst = Math.min(2, c.flares);
+        for (let i = 0; i < burst; i++) {
+          c.flares--;
+          this.missileSystem.dropFlare(c.id, c.model.position, c.model.velocity);
+        }
       }
     }
   }

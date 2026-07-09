@@ -110,7 +110,12 @@ export class AiPilot {
   private aimWander = new THREE.Vector3();
   private wanderTimer = 0;
 
-  constructor(private gun: GunSpec, private skill = 0.7) {}
+  /** Rookies can't fly the airframe to its limits: max pull scales with skill. */
+  private maxPull: number;
+
+  constructor(private gun: GunSpec, private skill = 0.7) {
+    this.maxPull = 0.55 + 0.45 * this.skill;
+  }
 
   update(dt: number, me: FlightBody, target: FlightBody | null, aglM: number): void {
     const c = me.controls;
@@ -167,7 +172,7 @@ export class AiPilot {
         this.jinkSign = -this.jinkSign;
       }
       c.roll = this.jinkSign;
-      c.pitch = 0.85;
+      c.pitch = Math.min(0.85, this.maxPull);
       c.yaw = 0;
       c.throttle = 1;
       c.afterburner = true;
@@ -178,7 +183,7 @@ export class AiPilot {
     const rollErr = Math.atan2(dirB.x, dirB.y);
     const alignment = Math.cos(rollErr); // 1 = target above canopy
     c.roll = THREE.MathUtils.clamp(rollErr * 1.6, -1, 1);
-    c.pitch = THREE.MathUtils.clamp(Math.atan2(dirB.y, -dirB.z) * 3.5 * Math.max(0.15, alignment), -1, 1);
+    c.pitch = THREE.MathUtils.clamp(Math.atan2(dirB.y, -dirB.z) * 3.5 * Math.max(0.15, alignment), -this.maxPull, this.maxPull);
     c.yaw = THREE.MathUtils.clamp(dirB.x * 0.6, -0.4, 0.4);
 
     // Energy: burn to close, ease off in the saddle

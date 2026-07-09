@@ -54,6 +54,7 @@ body.in-menu #scene { filter: brightness(0.35); }
 .era-wwi button:hover:not(:disabled) { background: rgba(216,180,106,0.18); border-color: #d8b46a; }
 .era button.locked { opacity: 0.35; cursor: default; font-style: italic; }
 .controls-hint { font-size: 0.7rem; color: #6b7a8d; letter-spacing: 0.08em; }
+.settings-row { display: flex; gap: 0.8rem; flex-wrap: wrap; justify-content: center; }
 .handling-btn {
   padding: 0.5rem 1.2rem; background: rgba(255,255,255,0.05); color: #aebdd0;
   border: 1px solid rgba(255,255,255,0.25); border-radius: 4px;

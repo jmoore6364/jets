@@ -24,7 +24,7 @@ export class Combatant {
   readonly model: FlightBody;
   readonly mesh: THREE.Group;
   readonly gun: Gun;
-  readonly maxHp: number;
+  maxHp: number;
   hp: number;
   alive = true;
   lastHitBy = -1;
