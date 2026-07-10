@@ -103,6 +103,10 @@ export class FlightModel {
 
   /** Smoothed G rate-of-change, used by the FBW limiter for lead anticipation. */
   private gRate = 0;
+  /** Smoothed alpha rate-of-change — the alpha limiter needs the same lead
+   * as the G limiter, or a sustained pull rides the limit in a porpoise. */
+  private alphaRate = 0;
+  private prevAlpha = 0;
   /**
    * Pilot assists (attitude/bank hold, level-turn assist) are for human
    * hands with neutral sticks. AI pilots command continuously — the assists
@@ -124,6 +128,8 @@ export class FlightModel {
     this.heldBank = null;
     this.heldPitch = null;
     this.gRate = 0;
+    this.alphaRate = 0;
+    this.prevAlpha = 0;
     this.position.set(x, altitude, z);
     this.quaternion.setFromEuler(new THREE.Euler(0, headingRad, 0, 'YXZ'));
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
@@ -188,7 +194,10 @@ export class FlightModel {
         this.heldPitch = null;
       }
       // Soft alpha & G limiter: bleeds off pilot pitch authority near limits.
-      const alphaOver = Math.max(0, alpha - s.fbw.alphaLimitRad) / 0.04;
+      // Lead on smoothed alpha-rate: cut authority BEFORE the limit is
+      // crossed, not after — a proportional-only cut limit-cycles (porpoise).
+      const alphaPredicted = alpha + this.alphaRate * 0.16;
+      const alphaOver = Math.max(0, alphaPredicted - s.fbw.alphaLimitRad) / 0.07;
       // Mild lead on smoothed G-rate so the cap holds without pumping.
       const gPredicted = g + this.gRate * 0.18;
       const gOver = Math.max(0, gPredicted - (s.fbw.gLimit - 0.5)) / 0.8;
@@ -329,6 +338,9 @@ export class FlightModel {
     // --- Sample for HUD/AI ---
     const gRateInst = clamp((gLoad - this.lastSample.gLoad) / dt, -60, 60);
     this.gRate += (gRateInst - this.gRate) * Math.min(1, dt / 0.06); // low-pass: kills limiter pumping
+    const alphaRateInst = clamp((alpha - this.prevAlpha) / dt, -8, 8);
+    this.prevAlpha = alpha;
+    this.alphaRate += (alphaRateInst - this.alphaRate) * Math.min(1, dt / 0.05);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);

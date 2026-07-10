@@ -117,6 +117,33 @@ describe('flight behavior', () => {
     expect(maxG).toBeGreaterThan(3); // ...but it should still actually turn
   });
 
+  it('FBW alpha limiter holds a sustained pull without porpoising', () => {
+    // Regression: a proportional-only alpha cut limit-cycled — pitch rate
+    // pumped between ~5 and ~70 deg/s in a constant full pull ("the bounce").
+    const m = freshModel(F16, 220);
+    m.controls.throttle = 0.9;
+    m.controls.pitch = 0.7;
+    const dt = 1 / 120;
+    const alphas: number[] = [];
+    let prevPitch = 0;
+    let pitchRateReversals = 0;
+    let lastRate = 0;
+    for (let t = 0; t < 2.2; t += dt) {
+      m.step(dt);
+      // once established on the limiter (t > 1s), record behavior
+      if (t > 1.0) {
+        alphas.push(m.sample.alphaRad);
+        const rate = (m.sample.pitchRad - prevPitch) / dt;
+        if (rate * lastRate < 0 && Math.abs(rate) > 0.1) pitchRateReversals++;
+        lastRate = rate;
+      }
+      prevPitch = m.sample.pitchRad;
+    }
+    const spread = Math.max(...alphas) - Math.min(...alphas);
+    expect(spread).toBeLessThan(0.03); // alpha pinned, not bouncing (was ~0.06+)
+    expect(pitchRateReversals).toBe(0); // nose never see-saws mid-pull
+  });
+
   it('speedbrake bleeds energy faster (F-16)', () => {
     const clean = freshModel(F16, 250);
     clean.controls.throttle = 0;
