@@ -32,6 +32,52 @@ function fbm(x: number, y: number, octaves: number): number {
   return v;
 }
 
+/** Radial-falloff disc for the sun and its halo — no more square sun. */
+function makeGlowTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.85)');
+  g.addColorStop(0.7, 'rgba(255,255,255,0.25)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * A lumpy cloud: overlapping soft puffs clustered along the horizontal,
+ * bigger through the middle, with a flatter base — drawn once to a canvas.
+ */
+function makeCloudTexture(seed: number): THREE.Texture {
+  const W = 256, H = 128;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d')!;
+  const puffs = 11;
+  for (let i = 0; i < puffs; i++) {
+    const t = i / (puffs - 1);
+    const px = W * (0.14 + 0.72 * t) + (hash2(seed * 31 + i, 5) - 0.5) * 22;
+    // tops billow, bottoms stay flat
+    const py = H * 0.62 - Math.sin(t * Math.PI) * H * 0.22 * (0.6 + hash2(seed, i) * 0.8);
+    const pr = (H * 0.16 + hash2(seed * 7, i) * H * 0.2) * (0.7 + Math.sin(t * Math.PI) * 0.5);
+    const g = ctx.createRadialGradient(px, py, 0, px, py, pr);
+    g.addColorStop(0, 'rgba(255,255,255,0.85)');
+    g.addColorStop(0.6, 'rgba(255,255,255,0.4)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(px - pr, py - pr, pr * 2, pr * 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export interface EraEnvironment {
   terrainHeight(x: number, z: number): number;
   group: THREE.Group;
@@ -103,9 +149,11 @@ export function buildEnvironment(era: Era): EraEnvironment {
 
   // Visible sun disc + glow, far along the light direction
   const sunDir = sun.position.clone().normalize();
+  const glowTex = makeGlowTexture();
   const mkGlow = (size: number, opacity: number, color: number) => {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({
-      color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+      map: glowTex, color, transparent: true, opacity,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false
     }));
     s.position.copy(sunDir).multiplyScalar(18000);
     s.scale.setScalar(size);
@@ -114,11 +162,13 @@ export function buildEnvironment(era: Era): EraEnvironment {
   group.add(mkGlow(2600, 0.9, 0xfff3d0), mkGlow(7000, 0.28, era === 'modern' ? 0xffe9b0 : 0xf5e6c8));
 
   // Cloud layer: soft static billboards drifting over the map
+  const cloudTextures = [makeCloudTexture(1), makeCloudTexture(2), makeCloudTexture(3)];
   const cloudBase = era === 'modern' ? 2400 : 1100;
   for (let i = 0; i < 26; i++) {
     const c1 = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: cloudTextures[i % cloudTextures.length],
       color: 0xffffff, transparent: true, depthWrite: false,
-      opacity: 0.28 + hash2(i, 7) * 0.22
+      opacity: 0.5 + hash2(i, 7) * 0.3
     }));
     c1.position.set(
       (hash2(i, 1) - 0.5) * SIZE * 0.9,
