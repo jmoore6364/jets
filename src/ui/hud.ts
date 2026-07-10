@@ -36,7 +36,7 @@ export interface CombatInfo {
     locked?: boolean;
   };
   weapon?: {
-    kind: 'gun' | 'msl' | 'bvr';
+    kind: 'gun' | 'msl' | 'bvr' | 'bomb';
     name: string;
     missiles: number;
     flares: number;
@@ -58,6 +58,8 @@ export interface CombatInfo {
   wingman?: { alive: boolean; mode: 'engage' | 'cover'; name?: string };
   /** Final-approach guidance: glide-slope deviation (+ = high) and speed cue. */
   approach?: { dev: number; speed: 'FAST' | 'SLOW' | 'ON SPD'; distanceM: number };
+  /** CCIP: predicted bomb impact point, screen-projected. */
+  ccip?: { onScreen: boolean; sx: number; sy: number };
   mission?: {
     text: string;
     bearingRad: number;
@@ -245,7 +247,7 @@ export class ModernHud extends CanvasHud {
       c.fillStyle = GREEN_DIM;
       c.fillText(`FLR ${wp.flares}`, spdX - 8, boxY + 102);
       c.fillStyle = GREEN;
-      if (wp.kind !== 'gun' && !wp.locked) {
+      if ((wp.kind === 'msl' || wp.kind === 'bvr') && !wp.locked) {
         c.fillText('NO LOCK', spdX - 8, boxY + 122);
       }
     } else {
@@ -352,6 +354,26 @@ export class ModernHud extends CanvasHud {
       const wmLabel = combat.wingman.name ? combat.wingman.name.toUpperCase() : 'WM';
       c.fillStyle = combat.wingman.alive ? GREEN_DIM : 'rgba(255,90,60,0.75)';
       c.fillText(combat.wingman.alive ? `${wmLabel} ${combat.wingman.mode.toUpperCase()} [G]` : `${wmLabel} DOWN`, w - 24, combat.hpFrac < 1 ? 68 : 48);
+    }
+
+    // ---- CCIP bomb pipper ----
+    if (combat.ccip?.onScreen) {
+      c.strokeStyle = GREEN;
+      c.lineWidth = 1.8;
+      c.beginPath();
+      c.arc(combat.ccip.sx, combat.ccip.sy, 9, 0, Math.PI * 2);
+      c.stroke();
+      c.beginPath();
+      c.arc(combat.ccip.sx, combat.ccip.sy, 1.6, 0, Math.PI * 2);
+      c.fill();
+      // fall line from the flight-path marker down to the pipper
+      c.save();
+      c.globalAlpha = 0.45;
+      c.beginPath();
+      c.moveTo(fpmX, fpmY + 10);
+      c.lineTo(combat.ccip.sx, combat.ccip.sy - 9);
+      c.stroke();
+      c.restore();
     }
 
     // ---- Radar B-scope ----
@@ -557,6 +579,7 @@ export class WwiCockpit extends CanvasHud {
         c.fillStyle = Math.abs(a.dev) < 0.25 ? '#b8e6a0' : '#ffd98a';
         c.fillText(`Glide: ${a.dev > 0.25 ? 'high' : a.dev < -0.25 ? 'LOW' : 'good'} · ${a.speed === 'ON SPD' ? 'speed good' : a.speed.toLowerCase()}`, w / 2, 44);
       }
+      this.drawBombsight(combat);
       this.victories(combat.kills);
       return;
     }
@@ -634,6 +657,7 @@ export class WwiCockpit extends CanvasHud {
       c.fillStyle = Math.abs(a.dev) < 0.25 ? '#b8e6a0' : '#ffd98a';
       c.fillText(`Glide: ${a.dev > 0.25 ? 'high' : a.dev < -0.25 ? 'LOW' : 'good'} · ${a.speed === 'ON SPD' ? 'speed good' : a.speed.toLowerCase()}`, w / 2, h * 0.05 + 22);
     }
+    this.drawBombsight(combat);
 
     // ---- Warnings ----
     if (s.stalled && Math.floor(performance.now() / 300) % 2 === 0) {
@@ -665,6 +689,27 @@ export class WwiCockpit extends CanvasHud {
       c.fillText(combat.hpFrac > 0.5 ? 'AIRFRAME HOLED' : 'BADLY SHOT UP', w * 0.5, h * 0.755);
     }
     this.victories(combat.kills);
+  }
+
+  /** Cooper-bomb readout + a painted sight cross where the bomb will land. */
+  private drawBombsight(combat: CombatInfo): void {
+    if (combat.weapon?.kind !== 'bomb') return;
+    const c = this.ctx;
+    c.textAlign = 'center';
+    c.font = '15px Georgia, serif';
+    c.fillStyle = combat.weapon.missiles > 0 ? '#f0e2c4' : '#a08a6a';
+    c.fillText(`Cooper bombs: ${combat.weapon.missiles} [F]`, this.w / 2, this.h - 28);
+    if (combat.ccip?.onScreen && combat.weapon.missiles > 0) {
+      const { sx, sy } = combat.ccip;
+      c.strokeStyle = 'rgba(240,223,174,0.9)';
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(sx - 10, sy); c.lineTo(sx - 3, sy);
+      c.moveTo(sx + 3, sy); c.lineTo(sx + 10, sy);
+      c.moveTo(sx, sy - 10); c.lineTo(sx, sy - 3);
+      c.moveTo(sx, sy + 3); c.lineTo(sx, sy + 10);
+      c.stroke();
+    }
   }
 
   /** Victory tally, top right, Great War style. */

@@ -41,6 +41,9 @@ export class Combatant {
   missileCap = 4;
   bvrCap = 2;
   decoyCap = 30;
+  /** Unguided bombs — both eras carry a rack. */
+  bombs = 0;
+  bombCap = 4;
 
   private smokeTimer = 0;
 
@@ -65,6 +68,7 @@ export class Combatant {
   }
 
   private rearm(): void {
+    this.bombs = this.bombCap;
     if (this.missileSpec) {
       this.missiles = this.missileCap;
       this.bvrMissiles = this.bvrCap;

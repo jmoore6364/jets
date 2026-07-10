@@ -16,6 +16,7 @@ import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
 import { MissileSystem, SAM, type MissileTargetView, type MissileSpec } from '../engine/combat/missiles';
 import { FlakSystem } from '../engine/combat/flak';
+import { BombSystem, predictImpact } from '../engine/combat/bombs';
 import { AiPilot, RoutePilot, StrikerPilot, WingmanPilot } from '../engine/ai/pilot';
 import { FlightModel } from '../engine/flight/flightModel';
 import { Combatant, gunFor } from './combatant';
@@ -122,7 +123,10 @@ export class FlightSession {
 
   // Modern weapons state
   private missileSystem: MissileSystem | null = null;
-  private selectedWeapon: 'gun' | 'msl' | 'bvr' = 'gun';
+  private selectedWeapon: 'gun' | 'msl' | 'bvr' | 'bomb' = 'gun';
+  private bombSystem: BombSystem;
+  private bombCooldown = 0;
+  private bombRegenTimer = 25;
   private lockedTarget: Combatant | null = null;
   private launchCooldown = 0;
   private prevFiring = false;
@@ -176,6 +180,10 @@ export class FlightSession {
       { spawn: this.effects.spawn.bind(this.effects), explosion: this.effects.explosion.bind(this.effects) },
       spec.era
     );
+    this.bombSystem = new BombSystem(this.scene, {
+      spawn: this.effects.spawn.bind(this.effects),
+      explosion: this.effects.explosion.bind(this.effects)
+    });
     this.buildAirfield(spec.era);
 
     this.player = this.addCombatant(spec, 0, getHandling() === 'arcade');
@@ -875,6 +883,13 @@ export class FlightSession {
         p.bvrMissiles++;
       }
     }
+    if (p.bombs < p.bombCap) {
+      this.bombRegenTimer -= dt;
+      if (this.bombRegenTimer <= 0) {
+        this.bombRegenTimer = 25;
+        p.bombs++;
+      }
+    }
     if (p.missileSpec && (p.flares < p.decoyCap || p.chaff < p.decoyCap)) {
       this.flareRegenTimer -= dt;
       if (this.flareRegenTimer <= 0) {
@@ -893,10 +908,11 @@ export class FlightSession {
 
     if (this.input.weaponToggleRequested) {
       this.input.weaponToggleRequested = false;
-      if (this.player.missileSpec) {
-        this.selectedWeapon = this.selectedWeapon === 'gun' ? 'msl' : this.selectedWeapon === 'msl' ? 'bvr' : 'gun';
-        this.lockedTarget = null;
-      }
+      const order: Array<FlightSession['selectedWeapon']> = this.player.missileSpec
+        ? ['gun', 'msl', 'bvr', 'bomb']
+        : ['gun', 'bomb'];
+      this.selectedWeapon = order[(order.indexOf(this.selectedWeapon) + 1) % order.length];
+      this.lockedTarget = null;
     }
     if (this.input.lockRequested) {
       this.input.lockRequested = false;
@@ -927,7 +943,20 @@ export class FlightSession {
 
     // Trigger edge: launch a missile
     const firing = this.playerDown === 'flying' && this.input.firing;
-    if (firing && !this.prevFiring && this.selectedWeapon !== 'gun' && this.missileSystem) {
+
+    // Pickle: bombs come off the rack while the trigger is held.
+    this.bombCooldown -= dt;
+    if (this.selectedWeapon === 'bomb' && firing && this.bombCooldown <= 0
+      && this.player.bombs > 0 && !this.groundRoll) {
+      this.bombCooldown = 0.45;
+      this.player.bombs--;
+      const m = this.player.model;
+      const bay = new THREE.Vector3(0, -1.6, 0).applyQuaternion(m.quaternion).add(m.position);
+      this.bombSystem.drop(this.player.id, bay, m.velocity);
+      this.audio?.launch();
+    }
+
+    if (firing && !this.prevFiring && (this.selectedWeapon === 'msl' || this.selectedWeapon === 'bvr') && this.missileSystem) {
       const bvr = this.selectedWeapon === 'bvr';
       const spec = bvr ? this.player.bvrSpec : this.player.missileSpec;
       const count = bvr ? this.player.bvrMissiles : this.player.missiles;
@@ -1133,6 +1162,8 @@ export class FlightSession {
       });
     }
     this.projectiles.update(dt, targets, this.env.terrainHeight);
+    this.bombSystem.update(dt, this.env.terrainHeight, targets,
+      pos => this.audio?.explosionAt(pos.distanceTo(this.player.model.position)));
 
     for (const c of this.combatants) this.groundCheck(c);
   }
@@ -1352,13 +1383,15 @@ export class FlightSession {
       info.contacts = contacts;
     }
 
-    // Weapons panel + threat warning (modern)
+    // Weapons panel + threat warning
     if (this.player.missileSpec) {
       info.weapon = {
         kind: this.selectedWeapon,
         name: this.selectedWeapon === 'gun' ? 'GUN'
+          : this.selectedWeapon === 'bomb' ? 'MK-82'
           : this.selectedWeapon === 'bvr' ? this.player.bvrSpec!.name : this.player.missileSpec.name,
-        missiles: this.selectedWeapon === 'bvr' ? this.player.bvrMissiles : this.player.missiles,
+        missiles: this.selectedWeapon === 'bomb' ? this.player.bombs
+          : this.selectedWeapon === 'bvr' ? this.player.bvrMissiles : this.player.missiles,
         flares: this.player.flares,
         locked: !!this.lockedTarget
       };
@@ -1385,6 +1418,26 @@ export class FlightSession {
           const v = this.sam.pos.clone().project(this.camera);
           info.rwr = { dirX: v.x, dirY: v.y, behind: v.z >= 1 };
         }
+      }
+    }
+
+    // WWI carries bombs too — a minimal weapon readout when selected.
+    if (!this.player.missileSpec && this.selectedWeapon === 'bomb') {
+      info.weapon = { kind: 'bomb', name: 'COOPER', missiles: this.player.bombs, flares: 0, locked: false };
+    }
+
+    // CCIP: where the next bomb lands, projected onto the HUD.
+    if (this.selectedWeapon === 'bomb' && this.player.bombs > 0 && this.playerDown === 'flying' && !this.groundRoll) {
+      const m = this.player.model;
+      const impact = new THREE.Vector3();
+      if (predictImpact(m.position, m.velocity, this.env.terrainHeight, impact)) {
+        const v = impact.project(this.camera);
+        const vp = viewportSize();
+        info.ccip = {
+          onScreen: v.z < 1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1,
+          sx: (v.x + 1) / 2 * vp.w,
+          sy: (1 - v.y) / 2 * vp.h
+        };
       }
     }
 
@@ -1470,6 +1523,7 @@ export class FlightSession {
     this.touch?.dispose();
     this.hud.dispose();
     this.missileSystem?.dispose();
+    this.bombSystem.dispose();
     this.projectiles.dispose();
     this.effects.dispose();
     for (const c of this.combatants) c.dispose();
