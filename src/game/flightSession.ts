@@ -1043,6 +1043,32 @@ export class FlightSession {
       };
     }
 
+    // Radar B-scope contacts (modern): ±60° gimbal, 30 km range
+    if (this.player.missileSpec) {
+      const myPos = this.player.model.position;
+      const heading = this.player.model.sample.headingRad;
+      const contacts: NonNullable<CombatInfo['contacts']> = [];
+      for (const c of this.combatants) {
+        if (c === this.player || !c.alive) continue;
+        const range = c.model.position.distanceTo(myPos);
+        if (range > 30000) continue;
+        const dx = c.model.position.x - myPos.x;
+        const dz = c.model.position.z - myPos.z;
+        let rel = Math.atan2(dx, -dz) - heading;
+        if (rel > Math.PI) rel -= 2 * Math.PI;
+        if (rel < -Math.PI) rel += 2 * Math.PI;
+        if (Math.abs(rel) > Math.PI / 3) continue;
+        const bugged = c === this.lockedTarget;
+        let closureMs: number | undefined;
+        if (bugged) {
+          const rHat = c.model.position.clone().sub(myPos).normalize();
+          closureMs = this.player.model.velocity.clone().sub(c.model.velocity).dot(rHat);
+        }
+        contacts.push({ bearingRad: rel, rangeM: range, hostile: c.side !== 0, bugged, closureMs });
+      }
+      info.contacts = contacts;
+    }
+
     // Weapons panel + threat warning (modern)
     if (this.player.missileSpec) {
       info.weapon = {

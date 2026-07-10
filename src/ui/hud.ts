@@ -44,6 +44,15 @@ export interface CombatInfo {
   };
   /** RWR: an enemy radar is painting us (yellow spike, pre-launch). */
   rwr?: { dirX: number; dirY: number; behind: boolean };
+  /** Radar B-scope contacts: bearing relative to the nose, range out to 30 km. */
+  contacts?: Array<{
+    bearingRad: number;
+    rangeM: number;
+    hostile: boolean;
+    bugged: boolean;
+    /** Closing speed toward the bugged target, m/s (positive = closing). */
+    closureMs?: number;
+  }>;
   /** Inbound missile warning (screen-projected direction). */
   threat?: { dirX: number; dirY: number; behind: boolean };
   wingman?: { alive: boolean; mode: 'engage' | 'cover'; name?: string };
@@ -342,6 +351,9 @@ export class ModernHud extends CanvasHud {
       c.fillText(combat.wingman.alive ? `${wmLabel} ${combat.wingman.mode.toUpperCase()} [G]` : `${wmLabel} DOWN`, w - 24, combat.hpFrac < 1 ? 68 : 48);
     }
 
+    // ---- Radar B-scope ----
+    if (combat.contacts) this.drawRadarScope(combat);
+
     // ---- Warnings ----
     c.textAlign = 'center';
     if (s.stalled) {
@@ -404,6 +416,63 @@ export class ModernHud extends CanvasHud {
       c.stroke();
     }
     void cockpitMode; // full glass HUD in both views
+  }
+
+  /**
+   * B-scope: bearing across (±60°), range up (0–30 km). Hostiles are ticks,
+   * friendlies dots, the bugged target a box with range/closure readout.
+   */
+  private drawRadarScope(combat: CombatInfo): void {
+    const c = this.ctx;
+    const { h } = this;
+    const size = Math.min(132, h * 0.24);
+    const x0 = 20;
+    const y1 = h - 26;            // bottom edge (0 km)
+    const y0 = y1 - size;         // top edge (30 km)
+    const halfCone = Math.PI / 3; // ±60°
+
+    c.save();
+    c.strokeStyle = 'rgba(60,255,110,0.55)';
+    c.fillStyle = GREEN_DIM;
+    c.lineWidth = 1;
+    c.font = '10px Consolas, Menlo, monospace';
+    c.strokeRect(x0, y0, size, size);
+    // range rings at 10/20 km + center bearing line
+    c.setLineDash([2, 4]);
+    for (const frac of [1 / 3, 2 / 3]) {
+      const y = y1 - size * frac;
+      c.beginPath(); c.moveTo(x0, y); c.lineTo(x0 + size, y); c.stroke();
+    }
+    c.beginPath(); c.moveTo(x0 + size / 2, y0); c.lineTo(x0 + size / 2, y1); c.stroke();
+    c.setLineDash([]);
+    c.textAlign = 'left';
+    c.fillText('RDR 30', x0 + 2, y0 - 7);
+
+    let bug: { x: number; y: number; rangeM: number; closureMs?: number } | null = null;
+    for (const t of combat.contacts!) {
+      const px = x0 + size / 2 + (t.bearingRad / halfCone) * (size / 2);
+      const py = y1 - Math.min(t.rangeM / 30000, 1) * size;
+      if (t.hostile) {
+        c.fillStyle = t.bugged ? 'rgba(120,255,150,1)' : 'rgba(60,255,110,0.85)';
+        c.fillRect(px - 2.5, py - 1.5, 5, 3);
+      } else {
+        c.fillStyle = 'rgba(120,180,255,0.8)';
+        c.beginPath(); c.arc(px, py, 2, 0, Math.PI * 2); c.fill();
+      }
+      if (t.bugged) bug = { x: px, y: py, rangeM: t.rangeM, closureMs: t.closureMs };
+    }
+    if (bug) {
+      c.strokeStyle = 'rgba(120,255,150,0.95)';
+      c.strokeRect(bug.x - 5.5, bug.y - 4.5, 11, 9);
+      c.fillStyle = 'rgba(120,255,150,0.95)';
+      c.textAlign = 'left';
+      c.fillText(`${(bug.rangeM / 1000).toFixed(1)} km`, x0 + 2, y1 + 10);
+      if (bug.closureMs !== undefined) {
+        const kts = Math.round(bug.closureMs * MS_TO_KTS);
+        c.fillText(`${kts >= 0 ? 'CLOSING' : 'OPENING'} ${Math.abs(kts)} kt`, x0 + 54, y1 + 10);
+      }
+    }
+    c.restore();
   }
 }
 
