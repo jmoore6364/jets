@@ -12,6 +12,7 @@ import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
 import { MissileSystem, SAM, type MissileTargetView, type MissileSpec } from '../engine/combat/missiles';
+import { FlakSystem } from '../engine/combat/flak';
 import { AiPilot, RoutePilot, StrikerPilot, WingmanPilot } from '../engine/ai/pilot';
 import { FlightModel } from '../engine/flight/flightModel';
 import { Combatant, gunFor } from './combatant';
@@ -44,6 +45,8 @@ export interface SessionResult {
   wingmanLost: boolean;
   /** The enemy ace flew this mission and went down. */
   aceKilled: boolean;
+  /** Player put it down gently on the home strip. */
+  landed: boolean;
 }
 
 const WWI_CENTRAL_IDS = ['fokker-dr1', 'fokker-d7'];
@@ -77,6 +80,10 @@ export class FlightSession {
   /** Strike mission objectives. */
   private bunker: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean } | null = null;
   private sam: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean; cooldown: number } | null = null;
+  /** Ground fire over defended territory. */
+  private flak: FlakSystem;
+  /** The home strip: land here gently and you walk away with a bonus. */
+  private homeField: { xMin: number; xMax: number; zMin: number; zMax: number } | null = null;
 
   private hud: CockpitHud;
   private input = new InputManager();
@@ -98,7 +105,7 @@ export class FlightSession {
   /** Dynasty legacy unlocks, applied to the player's loadout and airframe. */
   private perks: DynastyPerks;
   private chasePos = new THREE.Vector3();
-  private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
+  private playerDown: 'flying' | 'crashed' | 'shot-down' | 'landed' = 'flying';
   private kills = 0;
   private wingmanKills = 0;
   /** The enemy ace's airframe this mission, if he's up. */
@@ -145,6 +152,12 @@ export class FlightSession {
       };
       this.missileSystem = new MissileSystem(this.scene, fx);
     }
+
+    this.flak = new FlakSystem(
+      { spawn: this.effects.spawn.bind(this.effects), explosion: this.effects.explosion.bind(this.effects) },
+      spec.era
+    );
+    this.buildAirfield(spec.era);
 
     this.player = this.addCombatant(spec, 0, getHandling() === 'arcade');
     this.perks = dynastyPerks(loadDynasty());
@@ -288,6 +301,72 @@ export class FlightSession {
     }
   }
 
+  /** Home plate: a strip behind the spawn point, aligned with initial heading. */
+  private buildAirfield(era: 'wwi' | 'modern'): void {
+    const y = this.env.terrainHeight(0, -200) + 0.4;
+    const g = new THREE.Group();
+
+    const strip = new THREE.Mesh(
+      new THREE.PlaneGeometry(era === 'modern' ? 44 : 36, 1200),
+      new THREE.MeshLambertMaterial({ color: era === 'modern' ? 0x3a3d40 : 0x6b6540 })
+    );
+    strip.rotation.x = -Math.PI / 2;
+    strip.position.set(0, y, -200);
+    g.add(strip);
+
+    if (era === 'modern') {
+      for (let z = -740; z <= 320; z += 90) {
+        const dash = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.4, 30),
+          new THREE.MeshLambertMaterial({ color: 0xcfd2ce })
+        );
+        dash.rotation.x = -Math.PI / 2;
+        dash.position.set(0, y + 0.1, z);
+        g.add(dash);
+      }
+    }
+
+    // A pair of hangars off the western edge
+    for (const z of [-380, -180]) {
+      const hangar = new THREE.Mesh(
+        new THREE.BoxGeometry(26, 9, 34),
+        new THREE.MeshLambertMaterial({ color: era === 'modern' ? 0x5c625f : 0x5c4f38, flatShading: true })
+      );
+      hangar.position.set(-58, this.env.terrainHeight(-58, z) + 4.5, z);
+      g.add(hangar);
+    }
+
+    this.scene.add(g);
+    this.homeField = { xMin: -26, xMax: 26, zMin: -820, zMax: 420 };
+  }
+
+  /** Ground fire while over defended territory (career missions only). */
+  private updateFlak(dt: number): void {
+    const p = this.player.model.position;
+    let active = false;
+    if (this.mission && this.missionState === 'running' && this.playerDown === 'flying') {
+      const agl = p.y - this.env.terrainHeight(p.x, p.z);
+      if (agl < 2600) {
+        if (this.player.spec.era === 'wwi') {
+          // Archie lives around the objective — enemy territory.
+          const m = this.mission;
+          active = Math.hypot(p.x - m.zone.x, p.z - m.zone.z) < 2600;
+        } else {
+          // Modern AAA rings the strike targets.
+          for (const site of [this.sam, this.bunker]) {
+            if (site?.alive && Math.hypot(p.x - site.pos.x, p.z - site.pos.z) < 2400) active = true;
+          }
+        }
+      }
+    }
+    const burstDist = this.flak.update(
+      dt, active,
+      { position: this.player.model.position, velocity: this.player.model.velocity },
+      dmg => this.onCombatantHit(this.player, dmg, -1)
+    );
+    if (burstDist !== null) this.audio?.explosionAt(burstDist);
+  }
+
   private buildBalloonMesh(): THREE.Group {
     const g = new THREE.Group();
     const envelope = new THREE.Mesh(
@@ -375,11 +454,12 @@ export class FlightSession {
   getResult(): SessionResult {
     return {
       kills: this.kills,
-      survived: this.playerDown === 'flying',
+      survived: this.playerDown === 'flying' || this.playerDown === 'landed',
       missionComplete: this.mission ? this.missionState === 'complete' : null,
       wingmanKills: this.wingmanKills,
       wingmanLost: !!this.wingman && !this.wingman.alive,
-      aceKilled: this.aceKilled
+      aceKilled: this.aceKilled,
+      landed: this.playerDown === 'landed'
     };
   }
 
@@ -461,6 +541,7 @@ export class FlightSession {
       }
     }
 
+    this.updateFlak(dt);
     this.evaluateMission();
 
     for (const c of this.combatants) c.updateEffects(dt);
@@ -935,7 +1016,31 @@ export class FlightSession {
     if (pos.y >= ground + 1.5) return;
 
     if (c === this.player) {
+      if (this.playerDown === 'landed') {
+        pos.y = ground + 1.5;
+        c.model.velocity.setScalar(0);
+        return;
+      }
       if (this.playerDown === 'flying') {
+        // Gentle touchdown on the home strip = a landing, not a crash.
+        const f = this.homeField;
+        const s = c.model.sample;
+        const onRunway = !!f && pos.x > f.xMin && pos.x < f.xMax && pos.z > f.zMin && pos.z < f.zMax;
+        const gentle = c.model.velocity.y > -4.5
+          && s.speedMs < (c.spec.era === 'modern' ? 105 : 34)
+          && Math.abs(s.bankRad) < 0.35;
+        if (onRunway && gentle) {
+          this.playerDown = 'landed';
+          pos.y = ground + 1.5;
+          c.model.velocity.setScalar(0);
+          this.toast('WHEELS DOWN', 2400);
+          this.hud.showCrash(
+            this.missionState === 'complete' ? '✔ WHEELS DOWN — home safe, press Esc'
+              : this.mission ? 'LANDED — objective incomplete, press Esc'
+              : '✔ LANDED — press R to fly again'
+          );
+          return;
+        }
         this.playerDown = 'crashed';
         this.player.kill();
         this.audio?.explosionAt(0);

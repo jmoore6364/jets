@@ -80,11 +80,19 @@ export class CareerUI {
       p.legacy += 25;
       saveDynasty(d);
     }
+    // A textbook landing back home is worth something too.
+    if (result.landed && result.missionComplete) {
+      p.legacy += 5;
+      saveDynasty(d);
+    }
 
     const lines: string[] = [];
     lines.push(result.missionComplete ? 'Mission accomplished.' :
       survived ? 'Mission failed.' : this.era === 'wwi' ? 'The patrol did not return.' : 'Aircraft lost, pilot with it.');
     if (result.kills > 0) lines.push(`${result.kills} ${result.kills === 1 ? 'victory' : 'victories'} confirmed.`);
+    if (result.landed && result.missionComplete) {
+      lines.push('Wheels down on the home strip, airframe intact. +5 legacy.');
+    }
     if (fateLine) lines.push(fateLine);
     if (mission.wingman && result.wingmanKills > 0) {
       lines.push(`${mission.wingman.name} claimed ${result.wingmanKills} — buy him a drink.`);
