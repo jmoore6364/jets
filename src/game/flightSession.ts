@@ -39,6 +39,9 @@ export interface SessionResult {
   survived: boolean;
   /** null = skirmish (no objective). */
   missionComplete: boolean | null;
+  /** Campaign bookkeeping: how the squadron mate on your wing fared. */
+  wingmanKills: number;
+  wingmanLost: boolean;
 }
 
 function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
@@ -93,6 +96,7 @@ export class FlightSession {
   private chasePos = new THREE.Vector3();
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
+  private wingmanKills = 0;
 
   // Modern weapons state
   private missileSystem: MissileSystem | null = null;
@@ -286,7 +290,7 @@ export class FlightSession {
     const spec = this.player.spec;
     if (!this.wingman) {
       this.wingman = this.addCombatant(spec, 0);
-      this.pilots.set(this.wingman, new WingmanPilot(gunFor(spec), this.player.model, 0.75));
+      this.pilots.set(this.wingman, new WingmanPilot(gunFor(spec), this.player.model, this.mission?.wingman?.skill ?? 0.75));
     }
     const p = this.player.model.position;
     const off = new THREE.Vector3(70, 12, 90).applyQuaternion(this.player.model.quaternion);
@@ -328,7 +332,9 @@ export class FlightSession {
     return {
       kills: this.kills,
       survived: this.playerDown === 'flying',
-      missionComplete: this.mission ? this.missionState === 'complete' : null
+      missionComplete: this.mission ? this.missionState === 'complete' : null,
+      wingmanKills: this.wingmanKills,
+      wingmanLost: !!this.wingman && !this.wingman.alive
     };
   }
 
@@ -862,11 +868,18 @@ export class FlightSession {
         this.kills++;
         this.announceKill();
       } else if (this.wingman && c.lastHitBy === this.wingman.id) {
-        this.toast(this.player.spec.era === 'wwi' ? 'YOUR WINGMAN GETS ONE!' : 'WINGMAN: SPLASH ONE');
+        this.wingmanKills++;
+        const wm = this.mission?.wingman?.name;
+        this.toast(this.player.spec.era === 'wwi'
+          ? `${wm ? wm.toUpperCase() : 'YOUR WINGMAN'} GETS ONE!`
+          : `${wm ? wm.toUpperCase() : 'WINGMAN'}: SPLASH ONE`);
       }
     }
     if (wasAlive && !c.alive && c === this.wingman) {
-      this.toast(this.player.spec.era === 'wwi' ? 'YOUR WINGMAN GOES DOWN' : 'WINGMAN IS DOWN', 2600);
+      const wm = this.mission?.wingman?.name;
+      this.toast(this.player.spec.era === 'wwi'
+        ? `${wm ? wm.toUpperCase() : 'YOUR WINGMAN'} GOES DOWN`
+        : `${wm ? wm.toUpperCase() : 'WINGMAN'} IS DOWN`, 2600);
     }
   }
 
@@ -978,7 +991,8 @@ export class FlightSession {
       const wp = this.pilots.get(this.wingman);
       info.wingman = {
         alive: this.wingman.alive,
-        mode: wp instanceof WingmanPilot ? wp.mode : 'engage'
+        mode: wp instanceof WingmanPilot ? wp.mode : 'engage',
+        name: this.mission?.wingman?.name
       };
     }
 

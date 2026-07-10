@@ -119,6 +119,33 @@ body.in-menu #scene { filter: brightness(0.35); }
 .side-btn small { color: #a89a78; letter-spacing: 0.05em; }
 .era button.career-btn { border-color: rgba(216,180,106,0.7); color: #ffd98a; font-style: normal; }
 
+/* ---------- Campaign war panel ---------- */
+.war-panel {
+  border: 1px solid rgba(232,217,176,0.3); border-radius: 6px;
+  background: rgba(28,24,14,0.5); padding: 0.9rem 1.4rem; max-width: 34rem; width: 100%;
+}
+.war-line { color: #d9cba4; font-size: 0.92rem; font-style: italic; }
+.front-bar {
+  position: relative; height: 10px; margin-top: 0.7rem; border-radius: 5px;
+  background: linear-gradient(90deg, rgba(200,60,40,0.35), rgba(120,110,80,0.25), rgba(90,180,90,0.35));
+  border: 1px solid rgba(232,217,176,0.25); overflow: hidden;
+}
+.front-fill { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(232,182,74,0.45); }
+.front-mid { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 1px; background: rgba(232,217,176,0.5); }
+.war-meta { display: flex; justify-content: space-between; margin-top: 0.35rem; color: #a89a78; font-size: 0.72rem; letter-spacing: 0.1em; }
+.roster { margin-top: 0.7rem; display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: center; }
+.roster-pilot {
+  border: 1px solid rgba(232,217,176,0.3); border-radius: 3px; padding: 0.1rem 0.5rem;
+  color: #cbbc94; font-size: 0.75rem;
+}
+.roster-pilot.kia { color: #7d6a5c; text-decoration: line-through; border-color: rgba(150,80,60,0.4); }
+.war-end {
+  max-width: 34rem; width: 100%; padding: 0.8rem 1.2rem; border-radius: 5px;
+  font-size: 1.05rem; letter-spacing: 0.12em;
+}
+.war-end.won { border: 1px solid rgba(120,220,120,0.6); color: #b8e6a0; background: rgba(40,90,40,0.25); }
+.war-end.lost { border: 1px solid rgba(220,90,60,0.6); color: #e6a898; background: rgba(90,30,20,0.25); }
+
 /* ---------- Legacy shop ---------- */
 .shop-balance { margin-top: 0; }
 .shop-list { display: flex; flex-direction: column; gap: 0.7rem; max-width: 36rem; width: 100%; }

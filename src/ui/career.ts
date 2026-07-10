@@ -12,6 +12,7 @@ import {
   type Dynasty, type Side, type Consequences
 } from '../career/dynasty';
 import { LEGACY_UNLOCKS, availableLegacy, buyUnlock, hasUnlock } from '../career/legacyShop';
+import { getCampaign, applyCampaignOutcome, warStatusLine, type Campaign } from '../career/campaign';
 import { generateMission, type Mission } from '../game/mission';
 import type { SessionResult } from '../game/flightSession';
 
@@ -62,18 +63,49 @@ export class CareerUI {
       missionComplete: result.missionComplete === true
     });
 
+    // The war moves whether you made it back or not.
+    const camp = getCampaign(this.era, p.side);
+    const delta = applyCampaignOutcome(camp, {
+      missionComplete: result.missionComplete === true,
+      playerPlaneLost: !result.survived,
+      wingmanName: mission.wingman?.name ?? null,
+      wingmanKills: result.wingmanKills,
+      wingmanLost: result.wingmanLost
+    });
+
     const lines: string[] = [];
     lines.push(result.missionComplete ? 'Mission accomplished.' :
       survived ? 'Mission failed.' : this.era === 'wwi' ? 'The patrol did not return.' : 'Aircraft lost, pilot with it.');
     if (result.kills > 0) lines.push(`${result.kills} ${result.kills === 1 ? 'victory' : 'victories'} confirmed.`);
     if (fateLine) lines.push(fateLine);
+    if (mission.wingman && result.wingmanKills > 0) {
+      lines.push(`${mission.wingman.name} claimed ${result.wingmanKills} — buy him a drink.`);
+    }
+    if (mission.wingman && delta.wingmanFate === 'kia') {
+      lines.push(`${mission.wingman.name} did not come back. His bunk is empty tonight.`);
+    } else if (mission.wingman && delta.wingmanFate === 'down') {
+      lines.push(`${mission.wingman.name} went down but walked away. He'll fly again.`);
+    }
+    if (delta.replacement) lines.push(`A replacement pilot joined the squadron: ${delta.replacement}.`);
+    lines.push(`The front ${delta.frontDelta >= 0 ? 'moved our way' : 'slipped'} (${delta.frontDelta >= 0 ? '+' : ''}${delta.frontDelta}). ${warStatusLine(camp)}`);
     for (const m of cons.newMedals) lines.push(`Awarded the ${m.name}.`);
     if (cons.promotedTo) lines.push(`Promoted to ${cons.promotedTo}.`);
     if (cons.becameAce) lines.push(`${p.firstName} ${d.surname} is now an ACE.`);
     if (cons.kia) lines.push(`${rankOf(p)} ${p.firstName} ${d.surname} — killed in action, ${formatDate(p.dateISO)}. The line endures.`);
 
+    // War's end: banner + legacy bonus, and the theater resets fresh.
+    let warBanner = '';
+    if (delta.ended === 'won') {
+      p.legacy += 50;
+      saveDynasty(d);
+      warBanner = `<div class="war-end won">CAMPAIGN VICTORY — the ${this.era === 'wwi' ? 'front' : 'theater'} is ours. +50 legacy.</div>`;
+    } else if (delta.ended === 'lost') {
+      warBanner = `<div class="war-end lost">CAMPAIGN LOST — ${camp.aircraft <= 0 ? 'the squadron has no aircraft left to fly' : 'the front collapsed'}. A new war begins.</div>`;
+    }
+
     this.root.innerHTML = `
       <h2 class="career-h">${mission.title}</h2>
+      ${warBanner}
       <div class="debrief ${cons.kia ? 'kia' : result.missionComplete ? 'ok' : ''}">
         ${lines.map(l => `<p>${l}</p>`).join('')}
       </div>
@@ -104,8 +136,11 @@ export class CareerUI {
          Western Front. Your Viper wears the family's red tail.</div>`
       : '';
 
+    const warPanel = this.buildWarPanel(getCampaign(this.era, p.side));
+
     this.root.innerHTML = `
       <h2 class="career-h">${d.surname.toUpperCase()} DYNASTY · ${this.era === 'wwi' ? '1917' : '2026'}</h2>
+      ${warPanel}
       <div class="pilot-card">
         <div class="pilot-name">${rankOf(p)} ${p.firstName} ${d.surname}</div>
         <div class="pilot-sub">${p.squadron} · ${formatDate(p.dateISO)} · Generation ${p.generation}</div>
@@ -124,6 +159,25 @@ export class CareerUI {
         <button data-act="exit">MAIN MENU</button>
       </div>`;
     this.bind();
+  }
+
+  /** The war around you: front-line meter, squadron roster, aircraft pool. */
+  private buildWarPanel(c: Campaign): string {
+    const pct = (c.front + 100) / 2; // -100..100 -> 0..100
+    const roster = c.roster.map(pl =>
+      `<span class="roster-pilot ${pl.status === 'kia' ? 'kia' : ''}">${pl.name}${pl.kills > 0 ? ` (${pl.kills})` : ''}</span>`
+    ).join('');
+    return `
+      <div class="war-panel">
+        <div class="war-line">${warStatusLine(c)}</div>
+        <div class="front-bar"><div class="front-fill" style="width:${pct}%"></div><div class="front-mid"></div></div>
+        <div class="war-meta">
+          <span>DEFEAT</span>
+          <span>${c.aircraft} aircraft · mission ${c.missionsFlown + 1}</span>
+          <span>VICTORY</span>
+        </div>
+        <div class="roster">${roster}</div>
+      </div>`;
   }
 
   /** The Legacy Shop: spend the family's shared points on permanent perks. */
@@ -212,12 +266,16 @@ export class CareerUI {
   private showBriefing(): void {
     const d = this.dynasty!;
     const p = activePilot(d, this.era)!;
-    const mission = generateMission(p, d);
+    const mission = generateMission(p, d, getCampaign(this.era, p.side));
     this.pendingMission = mission;
+    const wingLine = mission.wingman
+      ? `<p class="briefing-meta">On your wing: ${mission.wingman.name}${mission.wingman.kills > 0 ? ` — ${mission.wingman.kills} kills` : ' — first tour'}.</p>`
+      : '';
     this.root.innerHTML = `
       <h2 class="career-h">${mission.title}</h2>
       <div class="briefing">
         <p>${mission.briefing}</p>
+        ${wingLine}
         <p class="briefing-meta">${rankOf(p)} ${p.firstName} ${d.surname} · ${p.squadron} ·
           mount: ${aircraftForSide(p.side).name}</p>
       </div>

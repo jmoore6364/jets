@@ -6,6 +6,7 @@
 import type { Era } from '../engine/flight/aircraft';
 import type { Side, PilotRecord, Dynasty } from '../career/dynasty';
 import { formatDate, wwiFounderAce } from '../career/dynasty';
+import { pickWingman, warStatusLine, type Campaign } from '../career/campaign';
 
 export type MissionType = 'patrol' | 'balloon' | 'escort' | 'intercept' | 'strike';
 
@@ -24,6 +25,8 @@ export interface Mission {
   route?: Array<{ x: number; z: number }>;
   /** Modern heritage: the line's WWI ace, if any — cosmetic + flavor. */
   heritage?: { name: string; victories: number };
+  /** Campaign: the squadron mate flying your wing today. */
+  wingman?: { name: string; skill: number; kills: number };
 }
 
 const WWI_SECTORS = {
@@ -149,6 +152,18 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
   };
 }
 
-export function generateMission(pilot: PilotRecord, dynasty: Dynasty | null = null): Mission {
-  return pilot.era === 'modern' ? generateModern(pilot, dynasty) : generateWwi(pilot);
+export function generateMission(
+  pilot: PilotRecord,
+  dynasty: Dynasty | null = null,
+  campaign: Campaign | null = null
+): Mission {
+  const m = pilot.era === 'modern' ? generateModern(pilot, dynasty) : generateWwi(pilot);
+  if (campaign) {
+    // The war colors every briefing — and a bad front means more trade.
+    m.briefing += ` ${warStatusLine(campaign)}`;
+    if (campaign.front <= -35) m.enemyCount = Math.min(3, m.enemyCount + 1);
+    const wm = pickWingman(campaign);
+    if (wm) m.wingman = { name: wm.name, skill: wm.skill, kills: wm.kills };
+  }
+  return m;
 }
