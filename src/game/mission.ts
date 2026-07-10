@@ -32,6 +32,8 @@ export interface Mission {
   heritage?: { name: string; victories: number };
   /** Campaign: the squadron mate flying your wing today. */
   wingman?: { name: string; skill: number; kills: number };
+  /** A second wingman, when the roster can spare one. */
+  wingman2?: { name: string; skill: number; kills: number };
   /** Campaign: the enemy ace is airborne in this sector. */
   ace?: { name: string; kills: number };
 }
@@ -48,7 +50,7 @@ function pick<T>(arr: T[]): T {
 }
 
 function generateWwi(pilot: PilotRecord): Mission {
-  const type: MissionType = pick(['patrol', 'patrol', 'balloon', 'escort']);
+  const type: MissionType = pick(['patrol', 'patrol', 'balloon', 'escort', 'intercept']);
   const theater: Theater = pick(['flanders', 'flanders', 'coast']);
   const sector = pick(WWI_SECTORS[pilot.side as 'entente' | 'central'] ?? WWI_SECTORS.entente);
   const date = formatDate(pilot.dateISO);
@@ -66,6 +68,18 @@ function generateWwi(pilot: PilotRecord): Mission {
         `${date}. An enemy observation balloon near ${sector} has been directing ` +
         `artillery onto our trenches all week. Fly to the marked position and burn it down. ` +
         `Expect a defending scout — balloons are never left alone.`
+    };
+  }
+
+  if (type === 'intercept') {
+    return {
+      era: 'wwi', type, theater, side: pilot.side, zone, enemyCount,
+      title: `Bomber Raid — ${sector}`,
+      briefing:
+        `${date}. Observers report Gothas crossing the lines, heading for the ` +
+        `aerodrome at ${sector} with a scout escort. They are slow, they are huge, ` +
+        `and they carry more guns than you'd like. Get above them, watch the ` +
+        `gunners, and bring them down before they reach the field.`
     };
   }
 
@@ -149,9 +163,10 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
       era: 'modern', type, theater, side: 'nato', zone, enemyCount, heritage,
       title: `Alert Scramble — ${sector}`,
       briefing:
-        `${date}. Hostile aircraft inbound toward the forward base at ${sector}, ` +
-        `coming in low and fast. You are the alert bird. Run them down and splash them ` +
-        `before they reach the field — burner is authorized, fuel is not your problem today.` + heritageLine
+        `${date}. A pair of Backfires with fighter escort is inbound toward the forward ` +
+        `base at ${sector}, coming in fast. You are the alert bird. The bombers are the ` +
+        `mission — splash them before they reach the field. Burner is authorized, ` +
+        `fuel is not your problem today.` + heritageLine
     };
   }
 
@@ -192,6 +207,12 @@ export function generateMission(
     if (campaign.front <= -35) m.enemyCount = Math.min(3, m.enemyCount + 1);
     const wm = pickWingman(campaign);
     if (wm) m.wingman = { name: wm.name, skill: wm.skill, kills: wm.kills };
+    // A healthy squadron puts a second man on your wing.
+    const others = campaign.roster.filter(p => p.status === 'active' && p.name !== wm?.name);
+    if (wm && others.length >= 4) {
+      const w2 = others[Math.floor(Math.random() * others.length)];
+      m.wingman2 = { name: w2.name, skill: w2.skill, kills: w2.kills };
+    }
     // Sometimes, their champion is up. Balloon busts stay ace-free —
     // that duel deserves open sky.
     if (campaign.ace.alive && m.type !== 'balloon' && Math.random() < 0.35) {

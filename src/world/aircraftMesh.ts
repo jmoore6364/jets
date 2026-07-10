@@ -241,5 +241,13 @@ function buildModern(spec: AircraftSpec): THREE.Group {
 }
 
 export function buildAircraftMesh(spec: AircraftSpec): THREE.Group {
+  // Bombers: build at fighter proportions, then scale the whole airframe up.
+  if (spec.id === 'gotha' || spec.id === 'backfire') {
+    const k = spec.era === 'wwi' ? 2.4 : 2.1;
+    const shrunk = { ...spec, wingSpanM: spec.wingSpanM / k };
+    const g = spec.era === 'wwi' ? buildWwi(shrunk) : buildModern(shrunk);
+    g.scale.setScalar(k);
+    return g;
+  }
   return spec.era === 'wwi' ? buildWwi(spec) : buildModern(spec);
 }

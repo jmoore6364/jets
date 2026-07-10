@@ -137,7 +137,7 @@ describe('mission generator', () => {
       if (m.type === 'balloon') expect(m.balloonAltM).toBeGreaterThan(300);
       if (m.type === 'escort') expect(m.route!.length).toBeGreaterThanOrEqual(2);
     }
-    expect(seen).toEqual(new Set(['patrol', 'balloon', 'escort']));
+    expect(seen).toEqual(new Set(['patrol', 'balloon', 'escort', 'intercept']));
   });
 
   it('scales opposition with the pilot\'s score', () => {

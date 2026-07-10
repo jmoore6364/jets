@@ -138,4 +138,37 @@ export const FOKKER_D7: AircraftSpec = {
   cruiseSpeedMs: 46
 };
 
+/** AI only: the raid bomber. Huge, slow, and it soaks up punishment. */
+export const GOTHA: AircraftSpec = {
+  id: 'gotha',
+  name: 'Gotha G.V',
+  era: 'wwi',
+  massKg: 3600,
+  inertia: { pitch: 26000, yaw: 38000, roll: 30000 },
+  wingAreaM2: 89.5,
+  wingSpanM: 23.7,
+  chordM: 3.9,
+  aspectRatio: 6.3,
+  oswald: 0.75,
+  cl0: 0.2,
+  clAlpha: 4.6,
+  clMax: 1.4,
+  alphaStallRad: 0.24,
+  cd0: 0.05,
+  cmDe: 0.1,
+  clDa: 0.02,
+  cnDr: 0.05,
+  adverseYaw: 0.01,
+  cmAlpha: -0.4,
+  cm0: 0.015,
+  cnBeta: 0.12,
+  dihedralEffect: 0.06,
+  pitchDamp: 12,
+  rollDamp: 0.8,
+  yawDamp: 0.5,
+  engineAngularMomentum: 0, // twin Mercedes, counter-torque cancels
+  propulsion: { kind: 'prop', maxPowerW: 388000, propEfficiency: 0.72, maxStaticThrustN: 9200 },
+  cruiseSpeedMs: 32
+};
+
 export const WWI_AIRCRAFT = [FOKKER_DR1, SOPWITH_CAMEL, SPAD13, FOKKER_D7];

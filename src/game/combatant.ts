@@ -17,6 +17,8 @@ export function gunFor(spec: AircraftSpec): GunSpec {
 }
 
 export function hitPointsFor(spec: AircraftSpec): number {
+  if (spec.id === 'gotha') return 24;      // it takes a squadron to bring one down
+  if (spec.id === 'backfire') return 16;
   return spec.era === 'wwi' ? 14 : 7;
 }
 
@@ -62,8 +64,10 @@ export class Combatant {
     this.gun = new Gun(gunFor(spec));
     this.maxHp = hitPointsFor(spec);
     this.hp = this.maxHp;
-    this.missileSpec = spec.era === 'modern' ? (spec.id === 'mig29' ? R73 : AIM9) : null;
-    this.bvrSpec = spec.era === 'modern' ? (spec.id === 'mig29' ? R77 : AIM120) : null;
+    // Fighters carry missiles; bombers just fly and bleed.
+    const fighter = spec.era === 'modern' && spec.id !== 'backfire';
+    this.missileSpec = fighter ? (spec.id === 'mig29' ? R73 : AIM9) : null;
+    this.bvrSpec = fighter ? (spec.id === 'mig29' ? R77 : AIM120) : null;
     this.rearm();
   }
 

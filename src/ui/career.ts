@@ -72,6 +72,9 @@ export class CareerUI {
       wingmanName: mission.wingman?.name ?? null,
       wingmanKills: result.wingmanKills,
       wingmanLost: result.wingmanLost,
+      wingman2Name: mission.wingman2?.name ?? null,
+      wingman2Kills: result.wingman2Kills,
+      wingman2Lost: result.wingman2Lost,
       aceKilled: result.aceKilled
     });
 
@@ -94,13 +97,14 @@ export class CareerUI {
       lines.push('Wheels down on the home strip, airframe intact. +5 legacy.');
     }
     if (fateLine) lines.push(fateLine);
-    if (mission.wingman && result.wingmanKills > 0) {
-      lines.push(`${mission.wingman.name} claimed ${result.wingmanKills} — buy him a drink.`);
-    }
-    if (mission.wingman && delta.wingmanFate === 'kia') {
-      lines.push(`${mission.wingman.name} did not come back. His bunk is empty tonight.`);
-    } else if (mission.wingman && delta.wingmanFate === 'down') {
-      lines.push(`${mission.wingman.name} went down but walked away. He'll fly again.`);
+    for (const [wm, kills, fate] of [
+      [mission.wingman, result.wingmanKills, delta.wingmanFate],
+      [mission.wingman2, result.wingman2Kills, delta.wingman2Fate]
+    ] as const) {
+      if (!wm) continue;
+      if (kills > 0) lines.push(`${wm.name} claimed ${kills} — buy him a drink.`);
+      if (fate === 'kia') lines.push(`${wm.name} did not come back. His bunk is empty tonight.`);
+      else if (fate === 'down') lines.push(`${wm.name} went down but walked away. He'll fly again.`);
     }
     if (mission.ace && result.aceKilled) {
       lines.push(`${mission.ace.name} — ${mission.ace.kills} victories — will never fly again. ` +
@@ -305,8 +309,10 @@ export class CareerUI {
     const d = this.dynasty!;
     const p = activePilot(d, this.era)!;
     const mission = this.pendingMission!;
-    const wingLine = mission.wingman
-      ? `<p class="briefing-meta">On your wing: ${mission.wingman.name}${mission.wingman.kills > 0 ? ` — ${mission.wingman.kills} kills` : ' — first tour'}.</p>`
+    const wingNames = [mission.wingman, mission.wingman2].filter(Boolean)
+      .map(w => `${w!.name}${w!.kills > 0 ? ` (${w!.kills} kills)` : ''}`).join(' and ');
+    const wingLine = wingNames
+      ? `<p class="briefing-meta">On your wing: ${wingNames}.</p>`
       : '';
     const mounts = availableMounts(p.side);
     const current = selectedMount(p.side);

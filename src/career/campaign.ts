@@ -142,6 +142,9 @@ export interface CampaignOutcome {
   wingmanName: string | null;
   wingmanKills: number;
   wingmanLost: boolean;
+  wingman2Name?: string | null;
+  wingman2Kills?: number;
+  wingman2Lost?: boolean;
   /** The enemy ace flew this mission and did not fly home. */
   aceKilled?: boolean;
 }
@@ -150,6 +153,7 @@ export interface CampaignDelta {
   frontDelta: number;
   /** null = no wingman drama; 'kia' | 'down' (survived the crash). */
   wingmanFate: 'kia' | 'down' | null;
+  wingman2Fate: 'kia' | 'down' | null;
   /** Name of the replacement pilot who joined, if any. */
   replacement: string | null;
   /** A new enemy champion rose this mission. */
@@ -158,7 +162,7 @@ export interface CampaignDelta {
 }
 
 export function applyCampaignOutcome(c: Campaign, o: CampaignOutcome, rng: () => number = Math.random): CampaignDelta {
-  const delta: CampaignDelta = { frontDelta: 0, wingmanFate: null, replacement: null, newAce: null, ended: null };
+  const delta: CampaignDelta = { frontDelta: 0, wingmanFate: null, wingman2Fate: null, replacement: null, newAce: null, ended: null };
   if (c.over) return delta;
 
   // The enemy champion: falls today, or keeps scoring off-screen.
@@ -184,19 +188,25 @@ export function applyCampaignOutcome(c: Campaign, o: CampaignOutcome, rng: () =>
   // Airframes: losses hurt, the depot trickles replacements.
   if (o.playerPlaneLost) c.aircraft--;
   if (o.wingmanLost) c.aircraft--;
+  if (o.wingman2Lost) c.aircraft--;
   c.missionsFlown++;
   if (c.missionsFlown % 2 === 0 && c.aircraft < MAX_AIRCRAFT) c.aircraft++;
 
-  // Wingman fate and score.
-  const wm = o.wingmanName ? c.roster.find(p => p.name === o.wingmanName && p.status === 'active') : null;
-  if (wm) {
-    wm.kills += o.wingmanKills;
-    if (o.wingmanLost) {
+  // Wingman fates and scores — both slots, same rules.
+  const wingmen: Array<{ name: string | null; kills: number; lost: boolean; fate: 'wingmanFate' | 'wingman2Fate' }> = [
+    { name: o.wingmanName, kills: o.wingmanKills, lost: o.wingmanLost, fate: 'wingmanFate' },
+    { name: o.wingman2Name ?? null, kills: o.wingman2Kills ?? 0, lost: o.wingman2Lost ?? false, fate: 'wingman2Fate' }
+  ];
+  for (const w of wingmen) {
+    const wm = w.name ? c.roster.find(p => p.name === w.name && p.status === 'active') : null;
+    if (!wm) continue;
+    wm.kills += w.kills;
+    if (w.lost) {
       if (rng() < 0.55) {
         wm.status = 'kia';
-        delta.wingmanFate = 'kia';
+        delta[w.fate] = 'kia';
       } else {
-        delta.wingmanFate = 'down';
+        delta[w.fate] = 'down';
       }
     }
   }

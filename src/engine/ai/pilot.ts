@@ -115,7 +115,13 @@ export class WingmanPilot {
   mode: 'engage' | 'cover' = 'engage';
   private ai: AiPilot;
 
-  constructor(gun: GunSpec, private leader: FlightBody, skill = 0.7) {
+  constructor(
+    gun: GunSpec,
+    private leader: FlightBody,
+    skill = 0.7,
+    /** Formation slot side: +1 = right of the leader, -1 = left. */
+    private slotSide: 1 | -1 = 1
+  ) {
     this.ai = new AiPilot(gun, skill);
   }
 
@@ -133,7 +139,7 @@ export class WingmanPilot {
     // Formate: a slot behind-right-above the leader.
     this.wantsFire = false;
     const c = me.controls;
-    const slot = new THREE.Vector3(60, 15, 80)
+    const slot = new THREE.Vector3(60 * this.slotSide, 15, 80)
       .applyQuaternion(this.leader.quaternion)
       .add(this.leader.position);
     const dist = me.position.distanceTo(slot);

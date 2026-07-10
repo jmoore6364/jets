@@ -76,4 +76,24 @@ export const MIG29: AircraftSpec = {
   cruiseSpeedMs: 175
 };
 
+/** AI only: the raid bomber — fast in a straight line, helpless in a turn. */
+export const BACKFIRE: AircraftSpec = {
+  ...F16,
+  id: 'backfire',
+  name: 'Tu-22M Backfire',
+  massKg: 58000,
+  inertia: { pitch: 900000, yaw: 1100000, roll: 400000 },
+  wingAreaM2: 175,
+  wingSpanM: 23.3,
+  chordM: 7.5,
+  aspectRatio: 3.1,
+  cd0: 0.024,
+  clMax: 1.4,
+  alphaStallRad: 0.3,
+  fbw: { alphaLimitRad: 0.26, gLimit: 2.5 },
+  brakeDrag: 0.04,
+  propulsion: { kind: 'jet', milThrustN: 490000, abThrustN: 490000 },
+  cruiseSpeedMs: 235
+};
+
 export const MODERN_AIRCRAFT = [F16, FA18];

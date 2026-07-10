@@ -20,8 +20,8 @@ import { BombSystem, predictImpact } from '../engine/combat/bombs';
 import { AiPilot, RoutePilot, StrikerPilot, WingmanPilot } from '../engine/ai/pilot';
 import { FlightModel } from '../engine/flight/flightModel';
 import { Combatant, gunFor } from './combatant';
-import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
-import { MIG29 } from '../era/modern/aircraft';
+import { FOKKER_DR1, SOPWITH_CAMEL, GOTHA } from '../era/wwi/aircraft';
+import { MIG29, BACKFIRE } from '../era/modern/aircraft';
 import { TouchControls, isTouchDevice } from '../ui/touch';
 import { viewportSize } from '../engine/viewport';
 import type { AudioEngine } from '../engine/audio';
@@ -44,9 +44,11 @@ export interface SessionResult {
   survived: boolean;
   /** null = skirmish (no objective). */
   missionComplete: boolean | null;
-  /** Campaign bookkeeping: how the squadron mate on your wing fared. */
+  /** Campaign bookkeeping: how the squadron mates on your wing fared. */
   wingmanKills: number;
   wingmanLost: boolean;
+  wingman2Kills: number;
+  wingman2Lost: boolean;
   /** The enemy ace flew this mission and went down. */
   aceKilled: boolean;
   /** Player put it down gently on the home strip. */
@@ -75,6 +77,9 @@ export class FlightSession {
   private pilots = new Map<Combatant, Pilot>();
   private player: Combatant;
   private wingman: Combatant | null = null;
+  private wingman2: Combatant | null = null;
+  /** Raid bombers this mission — the ones that must not get through. */
+  private raidBombers = new Set<Combatant>();
   private escortee: Combatant | null = null;
   private respawnTimers = new Map<Combatant, number>();
   private nextId = 0;
@@ -117,6 +122,7 @@ export class FlightSession {
   private playerDown: 'flying' | 'crashed' | 'shot-down' | 'landed' = 'flying';
   private kills = 0;
   private wingmanKills = 0;
+  private wingman2Kills = 0;
   /** The enemy ace's airframe this mission, if he's up. */
   private aceCombatant: Combatant | null = null;
   private aceKilled = false;
@@ -251,17 +257,33 @@ export class FlightSession {
       if (fin) (fin.material as THREE.MeshLambertMaterial).color.setHex(0xb02020);
     }
 
-    for (let i = 0; i < m.enemyCount; i++) {
-      const e = this.addCombatant(enemySpec, 1);
-      if (m.type === 'intercept') {
-        // Strikers start far out, inbound low and fast toward the base.
-        const away = zonePos.clone().sub(this.player.model.position).normalize();
-        const sx = m.zone.x + away.x * 9000 + (Math.random() - 0.5) * 1500;
-        const sz = m.zone.z + away.z * 9000 + (Math.random() - 0.5) * 1500;
-        e.respawn(sx, this.env.terrainHeight(sx, sz) + 600, sz, enemySpec.cruiseSpeedMs * 1.1, 0);
-        this.pilots.set(e, new StrikerPilot(zonePos.clone().setY(groundAtZone + 400), gunFor(enemySpec), difficultyParams().skill));
+    if (m.type === 'intercept') {
+      // The raid: a pair of bombers boring toward the base, with escorts.
+      const bomberSpec = modern ? BACKFIRE : GOTHA;
+      const away = zonePos.clone().sub(this.player.model.position).normalize();
+      const spawnDist = modern ? 9000 : 3800;
+      for (let i = 0; i < 2; i++) {
+        const b = this.addCombatant(bomberSpec, 1);
+        const sx = m.zone.x + away.x * spawnDist + (Math.random() - 0.5) * 1200;
+        const sz = m.zone.z + away.z * spawnDist + (Math.random() - 0.5) * 1200;
+        b.respawn(sx, this.env.terrainHeight(sx, sz) + (modern ? 900 : 700) + i * 120, sz,
+          bomberSpec.cruiseSpeedMs, 0);
+        this.pilots.set(b, new StrikerPilot(zonePos.clone().setY(groundAtZone + 400), gunFor(bomberSpec), 0.4));
+        this.applyDifficulty(b);
+        this.raidBombers.add(b);
+      }
+      for (let i = 0; i < m.enemyCount; i++) {
+        const e = this.addCombatant(enemySpec, 1);
+        const sx = m.zone.x + away.x * (spawnDist + 700) + (Math.random() - 0.5) * 1800;
+        const sz = m.zone.z + away.z * (spawnDist + 700) + (Math.random() - 0.5) * 1800;
+        e.respawn(sx, this.env.terrainHeight(sx, sz) + (modern ? 1300 : 900), sz,
+          enemySpec.cruiseSpeedMs, 0);
+        this.pilots.set(e, new AiPilot(gunFor(enemySpec), difficultyParams().skill + Math.random() * 0.1));
         this.applyDifficulty(e);
-      } else {
+      }
+    } else {
+      for (let i = 0; i < m.enemyCount; i++) {
+        const e = this.addCombatant(enemySpec, 1);
         const ox = (Math.random() - 0.5) * 800, oz = (Math.random() - 0.5) * 800;
         e.respawn(m.zone.x + ox, groundAtZone + cruiseAlt + Math.random() * 300, m.zone.z + oz,
           enemySpec.cruiseSpeedMs, Math.random() * Math.PI * 2);
@@ -596,6 +618,17 @@ export class FlightSession {
     const off = new THREE.Vector3(70, 12, 90).applyQuaternion(this.player.model.quaternion);
     this.wingman.respawn(p.x + off.x, Math.max(p.y + off.y, this.env.terrainHeight(p.x + off.x, p.z + off.z) + 200),
       p.z + off.z, spec.cruiseSpeedMs * 1.1, this.player.model.sample.headingRad);
+
+    // A healthy squadron sends a second man — left side of the formation.
+    if (this.mission?.wingman2) {
+      if (!this.wingman2) {
+        this.wingman2 = this.addCombatant(spec, 0);
+        this.pilots.set(this.wingman2, new WingmanPilot(gunFor(spec), this.player.model, this.mission.wingman2.skill, -1));
+      }
+      const off2 = new THREE.Vector3(-70, 12, 90).applyQuaternion(this.player.model.quaternion);
+      this.wingman2.respawn(p.x + off2.x, Math.max(p.y + off2.y, this.env.terrainHeight(p.x + off2.x, p.z + off2.z) + 220),
+        p.z + off2.z, spec.cruiseSpeedMs * 1.1, this.player.model.sample.headingRad);
+    }
   }
 
   private spawnSkirmishBandit(existing?: Combatant): void {
@@ -635,6 +668,8 @@ export class FlightSession {
       missionComplete: this.mission ? this.missionState === 'complete' : null,
       wingmanKills: this.wingmanKills,
       wingmanLost: !!this.wingman && !this.wingman.alive,
+      wingman2Kills: this.wingman2Kills,
+      wingman2Lost: !!this.wingman2 && !this.wingman2.alive,
       aceKilled: this.aceKilled,
       landed: this.playerDown === 'landed'
     };
@@ -678,7 +713,9 @@ export class FlightSession {
       const wp = this.wingman ? this.pilots.get(this.wingman) : null;
       if (wp instanceof WingmanPilot) {
         wp.mode = wp.mode === 'engage' ? 'cover' : 'engage';
-        this.toast(wp.mode === 'engage' ? 'WINGMAN: ENGAGE — cleared to hunt' : 'WINGMAN: COVER — on your wing', 1800);
+        const wp2 = this.wingman2 ? this.pilots.get(this.wingman2) : null;
+        if (wp2 instanceof WingmanPilot) wp2.mode = wp.mode;
+        this.toast(wp.mode === 'engage' ? 'WINGMEN: ENGAGE — cleared to hunt' : 'WINGMEN: COVER — on your wing', 1800);
       }
     }
     if (this.input.pauseRequested) {
@@ -1205,7 +1242,17 @@ export class FlightSession {
         this.toast(this.player.spec.era === 'wwi'
           ? `${wm ? wm.toUpperCase() : 'YOUR WINGMAN'} GETS ONE!`
           : `${wm ? wm.toUpperCase() : 'WINGMAN'}: SPLASH ONE`);
+      } else if (this.wingman2 && c.lastHitBy === this.wingman2.id) {
+        this.wingman2Kills++;
+        const wm = this.mission?.wingman2?.name;
+        this.toast(this.player.spec.era === 'wwi'
+          ? `${wm ? wm.toUpperCase() : 'YOUR WINGMAN'} GETS ONE!`
+          : `${wm ? wm.toUpperCase() : 'WINGMAN'}: SPLASH ONE`);
       }
+    }
+    if (wasAlive && !c.alive && c === this.wingman2) {
+      const wm2 = this.mission?.wingman2?.name;
+      this.toast(`${wm2 ? wm2.toUpperCase() : 'YOUR SECOND WINGMAN'} IS DOWN`, 2600);
     }
     if (wasAlive && !c.alive && c === this.wingman) {
       const wm = this.mission?.wingman?.name;
@@ -1292,17 +1339,20 @@ export class FlightSession {
     else if (m.type === 'balloon') complete = !!this.balloon && !this.balloon.alive;
     else if (m.type === 'strike') complete = !!this.bunker && !this.bunker.alive;
     else if (m.type === 'intercept') {
-      // Any striker reaching the base = mission failed.
-      for (const c of this.combatants) {
+      // Any BOMBER reaching the base = mission failed; escorts don't count.
+      for (const c of this.raidBombers.size ? this.raidBombers : this.combatants) {
         if (c.side !== 1 || !c.alive) continue;
         const d = Math.hypot(c.model.position.x - m.zone.x, c.model.position.z - m.zone.z);
         if (d < 1200) {
           this.missionState = 'failed';
-          this.hud.showCrash('THE STRIKERS GOT THROUGH — press Esc');
+          this.hud.showCrash('THE BOMBERS GOT THROUGH — press Esc');
           return;
         }
       }
-      complete = enemiesDown;
+      // The bombers are the mission; escorts can run home if they like.
+      complete = this.raidBombers.size
+        ? [...this.raidBombers].every(b => !b.alive)
+        : enemiesDown;
     }
     else if (m.type === 'escort') {
       if (this.escortee && !this.escortee.alive) {
@@ -1350,10 +1400,13 @@ export class FlightSession {
     // Wingman status
     if (this.wingman) {
       const wp = this.pilots.get(this.wingman);
+      const w2 = this.wingman2?.alive ? this.mission?.wingman2?.name : undefined;
       info.wingman = {
         alive: this.wingman.alive,
         mode: wp instanceof WingmanPilot ? wp.mode : 'engage',
         name: this.mission?.wingman?.name
+          ? `${this.mission.wingman.name}${w2 ? ` + ${w2}` : ''}`
+          : undefined
       };
     }
 
