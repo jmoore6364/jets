@@ -56,6 +56,8 @@ export interface CombatInfo {
   /** Inbound missile warning (screen-projected direction). */
   threat?: { dirX: number; dirY: number; behind: boolean };
   wingman?: { alive: boolean; mode: 'engage' | 'cover'; name?: string };
+  /** Final-approach guidance: glide-slope deviation (+ = high) and speed cue. */
+  approach?: { dev: number; speed: 'FAST' | 'SLOW' | 'ON SPD'; distanceM: number };
   mission?: {
     text: string;
     bearingRad: number;
@@ -333,7 +335,8 @@ export class ModernHud extends CanvasHud {
       c.fillStyle = m.state === 'failed' ? 'rgba(255,90,60,0.95)' : m.state === 'complete' ? GREEN : GREEN_DIM;
       const km = (m.distanceM / 1000).toFixed(1);
       const relBrg = String(Math.round((((m.bearingRad * R2D) % 360) + 360) % 360)).padStart(3, '0');
-      c.fillText(m.state === 'running' ? `${m.text} · BRG ${relBrg} · ${km} KM` : m.text.toUpperCase(), cx, tapeY + 52);
+      const line = `${m.state === 'running' ? m.text : m.text.toUpperCase()} · BRG ${relBrg} · ${km} KM`;
+      c.fillText(line, cx, tapeY + 52);
     }
 
     // ---- Kills / airframe state (top right) ----
@@ -353,6 +356,44 @@ export class ModernHud extends CanvasHud {
 
     // ---- Radar B-scope ----
     if (combat.contacts) this.drawRadarScope(combat);
+
+    // ---- Approach guidance (the meatball) ----
+    if (combat.approach) {
+      const a = combat.approach;
+      const gx = w - 84;         // right of the altitude column
+      const gy = cy;
+      const span = 52;           // half-height of the scale
+      c.strokeStyle = GREEN;
+      c.fillStyle = GREEN;
+      c.lineWidth = 1.4;
+      // datum arms
+      c.beginPath();
+      c.moveTo(gx - 16, gy); c.lineTo(gx - 5, gy);
+      c.moveTo(gx + 5, gy); c.lineTo(gx + 16, gy);
+      c.stroke();
+      // scale ticks
+      for (const t of [-1, -0.5, 0.5, 1]) {
+        c.beginPath();
+        c.moveTo(gx - 4, gy - t * span); c.lineTo(gx + 4, gy - t * span);
+        c.stroke();
+      }
+      // the ball: above datum = you're high
+      const devY = gy - Math.max(-1.4, Math.min(1.4, a.dev)) * span;
+      const onSlope = Math.abs(a.dev) < 0.25;
+      c.fillStyle = onSlope ? 'rgba(120,255,150,1)' : Math.abs(a.dev) > 0.9 ? 'rgba(255,90,60,0.95)' : 'rgba(255,210,80,0.95)';
+      c.beginPath();
+      c.arc(gx, devY, 5, 0, Math.PI * 2);
+      c.fill();
+      // labels
+      c.font = '12px Consolas, Menlo, monospace';
+      c.textAlign = 'center';
+      c.fillStyle = GREEN_DIM;
+      c.fillText('GS', gx, gy - span - 16);
+      c.fillStyle = a.speed === 'ON SPD' ? GREEN : 'rgba(255,210,80,0.95)';
+      c.fillText(a.speed, gx, gy + span + 18);
+      c.fillStyle = GREEN_DIM;
+      c.fillText(`${(a.distanceM / 1000).toFixed(1)}`, gx, gy + span + 34);
+    }
 
     // ---- Warnings ----
     c.textAlign = 'center';
@@ -508,7 +549,13 @@ export class WwiCockpit extends CanvasHud {
         const m = combat.mission;
         c.font = '15px Georgia, serif';
         c.fillStyle = m.state === 'failed' ? '#ff7a5a' : m.state === 'complete' ? '#b8e6a0' : '#f0e2c4';
-        c.fillText(m.state === 'running' ? `${m.text} — ${(m.distanceM / 1000).toFixed(1)} km` : m.text, w / 2, 24);
+        c.fillText(`${m.text} — ${(m.distanceM / 1000).toFixed(1)} km`, w / 2, 24);
+      }
+      if (combat.approach) {
+        const a = combat.approach;
+        c.font = '14px Georgia, serif';
+        c.fillStyle = Math.abs(a.dev) < 0.25 ? '#b8e6a0' : '#ffd98a';
+        c.fillText(`Glide: ${a.dev > 0.25 ? 'high' : a.dev < -0.25 ? 'LOW' : 'good'} · ${a.speed === 'ON SPD' ? 'speed good' : a.speed.toLowerCase()}`, w / 2, 44);
       }
       this.victories(combat.kills);
       return;
@@ -578,7 +625,14 @@ export class WwiCockpit extends CanvasHud {
       c.font = `${Math.max(13, h * 0.022)}px Georgia, serif`;
       c.fillStyle = m.state === 'failed' ? '#ff7a5a' : m.state === 'complete' ? '#b8e6a0' : '#f0e2c4';
       const km = (m.distanceM / 1000).toFixed(1);
-      c.fillText(m.state === 'running' ? `${m.text} — ${km} km` : m.text, w / 2, h * 0.05);
+      c.fillText(`${m.text} — ${km} km`, w / 2, h * 0.05);
+    }
+    if (combat.approach) {
+      const a = combat.approach;
+      c.textAlign = 'center';
+      c.font = `${Math.max(12, h * 0.019)}px Georgia, serif`;
+      c.fillStyle = Math.abs(a.dev) < 0.25 ? '#b8e6a0' : '#ffd98a';
+      c.fillText(`Glide: ${a.dev > 0.25 ? 'high' : a.dev < -0.25 ? 'LOW' : 'good'} · ${a.speed === 'ON SPD' ? 'speed good' : a.speed.toLowerCase()}`, w / 2, h * 0.05 + 22);
     }
 
     // ---- Warnings ----

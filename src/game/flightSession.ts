@@ -1382,16 +1382,19 @@ export class FlightSession {
     if (this.mission) {
       const m = this.mission;
       const p = this.player.model.position;
-      // Objective point: escort follows the two-seater, others the zone.
-      const ox = m.type === 'escort' && this.escortee?.alive ? this.escortee.model.position.x : m.zone.x;
-      const oz = m.type === 'escort' && this.escortee?.alive ? this.escortee.model.position.z : m.zone.z;
+      // Objective point: escort follows the two-seater, others the zone —
+      // and once the mission is decided, the marker points home.
+      const rtb = this.missionState === 'complete' || this.missionState === 'failed';
+      const ox = rtb ? 0 : m.type === 'escort' && this.escortee?.alive ? this.escortee.model.position.x : m.zone.x;
+      const oz = rtb ? -200 : m.type === 'escort' && this.escortee?.alive ? this.escortee.model.position.z : m.zone.z;
       const bearing = Math.atan2(ox - p.x, -(oz - p.z));
       const dist = Math.hypot(ox - p.x, oz - p.z);
       const hostiles = this.combatants.filter(c => c.side === 1 && c.alive).length;
       const modern = this.player.spec.era === 'modern';
+      const home = this.homeDeckY !== null ? 'the boat' : 'home plate';
       const label =
-        this.missionState === 'complete' ? 'Mission complete — return when ready' :
-        this.missionState === 'failed' ? 'Mission failed' :
+        this.missionState === 'complete' ? `Mission complete — RTB ${home}` :
+        this.missionState === 'failed' ? `Mission failed — RTB ${home}` :
         m.type === 'patrol' ? `${modern ? 'CAP' : 'Patrol'}: clear the sector (${hostiles} hostile)` :
         m.type === 'balloon' ? 'Destroy the observation balloon' :
         m.type === 'strike' ? `Strike: destroy the bunker${this.sam?.alive ? ' (SAM active)' : ''}` :
@@ -1403,6 +1406,28 @@ export class FlightSession {
         distanceM: dist,
         state: this.missionState
       };
+    }
+
+    // Approach guidance: glide slope + speed cue on final to home plate.
+    if (this.homeField && this.playerDown === 'flying'
+      && (!this.mission || this.missionState !== 'running')) {
+      const p = this.player.model.position;
+      const aimZ = this.homeDeckY !== null ? -90 : 240; // threshold end
+      const aimY = this.groundHeightAt(0, aimZ) + 2;
+      const dist = Math.hypot(p.x, p.z - aimZ);
+      if (dist < 6000 && dist > 120 && p.y - aimY < 900) {
+        const ideal = aimY + dist * 0.0612; // 3.5° glide path
+        const dev = THREE.MathUtils.clamp((p.y - ideal) / Math.max(dist * 0.05, 25), -1.5, 1.5);
+        const spd = this.player.model.sample.speedMs;
+        const target = this.player.spec.era === 'modern'
+          ? (this.homeDeckY !== null ? 78 : 88)
+          : this.player.spec.cruiseSpeedMs * 0.8;
+        info.approach = {
+          dev,
+          speed: spd > target * 1.12 ? 'FAST' : spd < target * 0.85 ? 'SLOW' : 'ON SPD',
+          distanceM: dist
+        };
+      }
     }
     return info;
   }
