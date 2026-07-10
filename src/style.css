@@ -158,6 +158,31 @@ body.in-menu #scene { filter: brightness(0.35); }
 .war-end.won { border: 1px solid rgba(120,220,120,0.6); color: #b8e6a0; background: rgba(40,90,40,0.25); }
 .war-end.lost { border: 1px solid rgba(220,90,60,0.6); color: #e6a898; background: rgba(90,30,20,0.25); }
 
+/* ---------- Chronicle ---------- */
+.chron-totals { flex-wrap: wrap; }
+.chronicle {
+  display: flex; flex-direction: column; gap: 1rem; max-width: 40rem; width: 100%;
+  max-height: 55vh; overflow-y: auto; padding: 0.2rem 0.6rem;
+}
+.chron-pilot {
+  border: 1px solid rgba(232,217,176,0.3); border-radius: 6px;
+  background: rgba(40,32,18,0.4); padding: 0.9rem 1.2rem; text-align: left;
+}
+.chron-pilot.kia { border-color: rgba(150,80,60,0.45); }
+.chron-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.3rem; color: #f0e2c4; font-size: 0.95rem; }
+.chron-stat { color: #a89a78; font-size: 0.8rem; }
+.chron-medals { justify-content: flex-start; margin-top: 0.5rem; }
+.chron-entry {
+  display: flex; gap: 0.7rem; align-items: baseline; flex-wrap: wrap;
+  border-top: 1px solid rgba(232,217,176,0.12); padding: 0.35rem 0; font-size: 0.85rem;
+}
+.chron-entry.kia .chron-title { color: #d9a08a; }
+.chron-date { color: #8d8168; font-size: 0.75rem; min-width: 7.5rem; }
+.chron-title { color: #d9cba4; }
+.chron-kills { color: #ffd98a; }
+.chron-note { width: 100%; color: #c8a86a; font-size: 0.78rem; font-style: italic; padding-left: 8.2rem; }
+.chron-note.none { padding-left: 0; color: #7d735c; }
+
 /* ---------- Legacy shop ---------- */
 .shop-balance { margin-top: 0; }
 .shop-list { display: flex; flex-direction: column; gap: 0.7rem; max-width: 36rem; width: 100%; }

@@ -8,7 +8,7 @@ import { FOKKER_DR1, SOPWITH_CAMEL } from '../era/wwi/aircraft';
 import { F16 } from '../era/modern/aircraft';
 import {
   loadDynasty, saveDynasty, createDynasty, createPilot, activePilot,
-  applyMissionOutcome, rankOf, formatDate, dynastyLegacy, wwiFounderAce,
+  applyMissionOutcome, rankOf, formatDate, dynastyLegacy, wwiFounderAce, logChronicle,
   type Dynasty, type Side, type Consequences
 } from '../career/dynasty';
 import { LEGACY_UNLOCKS, availableLegacy, buyUnlock, hasUnlock } from '../career/legacyShop';
@@ -120,6 +120,24 @@ export class CareerUI {
     if (cons.becameAce) lines.push(`${p.firstName} ${d.surname} is now an ACE.`);
     if (cons.kia) lines.push(`${rankOf(p)} ${p.firstName} ${d.surname} — killed in action, ${formatDate(p.dateISO)}. The line endures.`);
 
+    // The family history gets a line.
+    const notes: string[] = [];
+    if (mission.ace && result.aceKilled) notes.push(`Downed ${mission.ace.name}`);
+    for (const md of cons.newMedals) notes.push(`Awarded the ${md.name}`);
+    if (cons.promotedTo) notes.push(`Promoted to ${cons.promotedTo}`);
+    if (delta.ended === 'won') notes.push('CAMPAIGN VICTORY');
+    else if (delta.ended === 'lost') notes.push('The campaign was lost');
+    if (delta.ended === 'won') d.warsWon = (d.warsWon ?? 0) + 1;
+    logChronicle(d, {
+      dateISO: p.dateISO,
+      pilotId: p.id,
+      era: this.era,
+      title: mission.title,
+      kills: result.kills,
+      outcome: cons.kia ? 'kia' : result.missionComplete ? 'complete' : 'failed',
+      note: notes.length ? notes.join(' · ') : undefined
+    });
+
     // War's end: banner + legacy bonus, and the theater resets fresh.
     let warBanner = '';
     if (delta.ended === 'won') {
@@ -183,6 +201,7 @@ export class CareerUI {
       <div class="career-actions">
         <button data-act="fly" class="primary">FLY NEXT MISSION</button>
         <button data-act="shop">LEGACY · ${availableLegacy(d)} PTS</button>
+        <button data-act="chronicle">CHRONICLE</button>
         <button data-act="exit">MAIN MENU</button>
       </div>`;
     this.bind();
@@ -213,6 +232,48 @@ export class CareerUI {
         </div>
         <div class="roster">${roster}</div>
       </div>`;
+  }
+
+  /** The family history: every pilot, every sortie that made a line. */
+  private showChronicle(): void {
+    const d = this.dynasty!;
+    const chron = d.chronicle ?? [];
+    const acesDowned = chron.filter(e => e.note?.includes('Downed ')).length;
+    const totalVict = d.pilots.reduce((s, p) => s + p.victories, 0);
+    const totalSorties = d.pilots.reduce((s, p) => s + p.sorties, 0);
+
+    const gens = [...d.pilots].reverse().map(p => {
+      const entries = chron.filter(e => e.pilotId === p.id).slice(-10).reverse();
+      const list = entries.map(e => `
+        <div class="chron-entry ${e.outcome}">
+          <span class="chron-date">${formatDate(e.dateISO)}</span>
+          <span class="chron-title">${e.title}</span>
+          ${e.kills > 0 ? `<span class="chron-kills">${e.kills} ✕</span>` : ''}
+          ${e.note ? `<div class="chron-note">${e.note}</div>` : ''}
+        </div>`).join('');
+      const medals = p.medals.map(m => `<span class="medal">${m.name}</span>`).join('');
+      return `
+        <div class="chron-pilot ${p.status}">
+          <div class="chron-head">
+            <span>Generation ${p.generation} · ${rankOf(p)} ${p.firstName} ${d.surname} · ${p.era === 'wwi' ? '1917' : '2026'}</span>
+            <span class="chron-stat">${p.victories} victories · ${p.sorties} sorties${p.status === 'kia' ? ' · ✝ fell in action' : p.status === 'active' ? ' · flying' : ''}</span>
+          </div>
+          ${medals ? `<div class="pilot-medals chron-medals">${medals}</div>` : ''}
+          ${list || '<div class="chron-note none">No sorties recorded yet.</div>'}
+        </div>`;
+    }).join('');
+
+    this.root.innerHTML = `
+      <h2 class="career-h">THE ${d.surname.toUpperCase()} CHRONICLE</h2>
+      <div class="pilot-stats chron-totals">
+        <span><b>${totalVict}</b> family victories</span>
+        <span><b>${totalSorties}</b> sorties flown</span>
+        <span><b>${d.warsWon ?? 0}</b> wars won</span>
+        <span><b>${acesDowned}</b> enemy aces downed</span>
+      </div>
+      <div class="chronicle">${gens || '<p class="career-sub">The book is empty. Go write it.</p>'}</div>
+      <div class="career-actions"><button data-act="home">BACK</button></div>`;
+    this.bind();
   }
 
   /** The Legacy Shop: spend the family's shared points on permanent perks. */
@@ -349,6 +410,7 @@ export class CareerUI {
         if (act === 'exit') this.opts.onExit();
         else if (act === 'home') this.showHome();
         else if (act === 'shop') this.showShop();
+        else if (act === 'chronicle') this.showChronicle();
         else if (act === 'fly') this.showBriefing();
         else if (act === 'takeoff' && this.pendingMission) {
           const p = activePilot(this.dynasty!, this.era)!;

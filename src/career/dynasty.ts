@@ -35,11 +35,34 @@ export interface PilotRecord {
   dateISO: string;
 }
 
+/** One line in the family history — a sortie, a medal, a death, a war. */
+export interface ChronicleEntry {
+  dateISO: string;
+  pilotId: string;
+  era: Era;
+  title: string;
+  kills: number;
+  outcome: 'complete' | 'failed' | 'kia';
+  /** The headline, if the sortie made one: an ace downed, a war won... */
+  note?: string;
+}
+
 export interface Dynasty {
   surname: string;
   createdISO: string;
   pilots: PilotRecord[];
   unlocks: string[];
+  chronicle?: ChronicleEntry[];
+  warsWon?: number;
+}
+
+const CHRONICLE_CAP = 250;
+
+export function logChronicle(d: Dynasty, entry: ChronicleEntry): void {
+  d.chronicle = d.chronicle ?? [];
+  d.chronicle.push(entry);
+  if (d.chronicle.length > CHRONICLE_CAP) d.chronicle.splice(0, d.chronicle.length - CHRONICLE_CAP);
+  saveDynasty(d);
 }
 
 export const RANKS: Record<Side, string[]> = {

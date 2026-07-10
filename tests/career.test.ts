@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   createDynasty, createPilot, activePilot, applyMissionOutcome, rankOf,
-  wwiFounderAce, dynastyLegacy, MEDALS, type Dynasty
+  wwiFounderAce, dynastyLegacy, logChronicle, MEDALS, type Dynasty
 } from '../src/career/dynasty';
 import { generateMission } from '../src/game/mission';
 
@@ -23,6 +23,21 @@ function freshPilot(side: 'entente' | 'central' = 'entente'): { d: Dynasty; p: R
   const p = createPilot(d, 'Jack', side);
   return { d, p };
 }
+
+describe('chronicle', () => {
+  it('logs entries per pilot and caps the book at 250', () => {
+    const { d, p } = freshPilot();
+    for (let i = 0; i < 260; i++) {
+      logChronicle(d, {
+        dateISO: '1917-04-01', pilotId: p.id, era: 'wwi',
+        title: `Sortie ${i}`, kills: i % 3, outcome: 'complete'
+      });
+    }
+    expect(d.chronicle!.length).toBe(250);
+    expect(d.chronicle![249].title).toBe('Sortie 259'); // newest kept
+    expect(d.chronicle![0].title).toBe('Sortie 10');    // oldest trimmed
+  });
+});
 
 describe('career progression', () => {
   it('awards first-victory and ace medals when thresholds cross', () => {
