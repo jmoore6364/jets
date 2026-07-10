@@ -18,6 +18,15 @@ export interface SquadronPilot {
   status: 'active' | 'kia';
 }
 
+/** The enemy's champion. His score grows until somebody stops him. */
+export interface AceRecord {
+  name: string;
+  kills: number;
+  alive: boolean;
+  /** Missions since he fell — a successor rises after two. */
+  sinceDeath: number;
+}
+
 export interface Campaign {
   era: Era;
   side: Side;
@@ -27,6 +36,9 @@ export interface Campaign {
   /** Squadron airframes. Runs dry, war's lost — planes are the war. */
   aircraft: number;
   roster: SquadronPilot[];
+  ace: AceRecord;
+  /** Fallen enemy champions — trophies, and no name rises twice. */
+  deadAces: string[];
   over: 'won' | 'lost' | null;
 }
 
@@ -35,6 +47,27 @@ const WINGMAN_NAMES: Record<Side, string[]> = {
   central: ['Vogel', 'Brandt', 'Keller', 'Sachs', 'Lehmann', 'Falk', 'Winter', 'Roth', 'Krause', 'Adler'],
   nato: ['Duke', 'Static', 'Torch', 'Gypsy', 'Havoc', 'Reaper', 'Frost', 'Mongoose', 'Saber', 'Tex']
 };
+
+/** Enemy ace name pools — who you fight, not who you are. */
+const ACE_NAMES: Record<Side, string[]> = {
+  // Facing the entente player: the German champions.
+  entente: ['Manfred von Richthofen', 'Werner Voss', 'Ernst Udet', 'Lothar von Richthofen', 'Kurt Wolff'],
+  // Facing the central player: the Allied champions.
+  central: ['Albert Ball', 'James McCudden', 'Mick Mannock', 'Billy Bishop', 'Georges Guynemer'],
+  // Facing NATO: the other side's squadron leaders.
+  nato: ['Col. V. "DRAKON" Baranov', 'Maj. I. "WRAITH" Sorokin', 'Col. A. "KHAN" Nazarov', 'Maj. R. "VULTURE" Petrov', 'Col. D. "TEMPEST" Volkov']
+};
+
+function nextAce(side: Side, existing: string[], rng: () => number, era: Era): AceRecord {
+  const pool = ACE_NAMES[side].filter(n => !existing.includes(n));
+  const name = pool.length ? pool[Math.floor(rng() * pool.length)] : `The New ${era === 'wwi' ? 'Baron' : 'Colonel'}`;
+  return {
+    name,
+    kills: era === 'wwi' ? 8 + Math.floor(rng() * 18) : 2 + Math.floor(rng() * 5),
+    alive: true,
+    sinceDeath: 0
+  };
+}
 
 const MAX_AIRCRAFT = 12;
 const KEY = 'jets.campaign.v1';
@@ -72,6 +105,8 @@ export function createCampaign(era: Era, side: Side, rng: () => number = Math.ra
   return {
     era, side, front: 0, missionsFlown: 0, aircraft: 10,
     roster: freshRoster(side, rng),
+    ace: nextAce(side, [], rng, era),
+    deadAces: [],
     over: null
   };
 }
@@ -79,7 +114,15 @@ export function createCampaign(era: Era, side: Side, rng: () => number = Math.ra
 /** The era's running war, or a fresh one if none / side changed / war over. */
 export function getCampaign(era: Era, side: Side): Campaign {
   const existing = loadAll()[era];
-  if (existing && existing.side === side && !existing.over) return existing;
+  if (existing && existing.side === side && !existing.over) {
+    // Saves from before the ace system get a champion assigned.
+    if (!existing.ace) {
+      existing.ace = nextAce(side, [], Math.random, era);
+      existing.deadAces = existing.deadAces ?? [];
+      saveCampaign(existing);
+    }
+    return existing;
+  }
   const c = createCampaign(era, side);
   saveCampaign(c);
   return c;
@@ -99,6 +142,8 @@ export interface CampaignOutcome {
   wingmanName: string | null;
   wingmanKills: number;
   wingmanLost: boolean;
+  /** The enemy ace flew this mission and did not fly home. */
+  aceKilled?: boolean;
 }
 
 export interface CampaignDelta {
@@ -107,17 +152,33 @@ export interface CampaignDelta {
   wingmanFate: 'kia' | 'down' | null;
   /** Name of the replacement pilot who joined, if any. */
   replacement: string | null;
+  /** A new enemy champion rose this mission. */
+  newAce: string | null;
   ended: 'won' | 'lost' | null;
 }
 
 export function applyCampaignOutcome(c: Campaign, o: CampaignOutcome, rng: () => number = Math.random): CampaignDelta {
-  const delta: CampaignDelta = { frontDelta: 0, wingmanFate: null, replacement: null, ended: null };
+  const delta: CampaignDelta = { frontDelta: 0, wingmanFate: null, replacement: null, newAce: null, ended: null };
   if (c.over) return delta;
 
+  // The enemy champion: falls today, or keeps scoring off-screen.
+  if (c.ace.alive && o.aceKilled) {
+    c.ace.alive = false;
+    c.ace.sinceDeath = 0;
+    c.deadAces.push(c.ace.name);
+    delta.frontDelta += 4; // his death is worth ground
+  } else if (c.ace.alive) {
+    c.ace.kills += rng() < 0.5 ? 1 : 0;
+  } else if (++c.ace.sinceDeath >= 2) {
+    c.ace = nextAce(c.side, c.deadAces, rng, c.era);
+    delta.newAce = c.ace.name;
+  }
+
   // The front moves on results, with the rest of the war drifting around you.
+  // (An ace killed above already contributed +4.)
   const drift = (rng() - 0.45) * 4;
   const swing = o.missionComplete ? 7 + rng() * 5 : -(5 + rng() * 4);
-  delta.frontDelta = Math.round(swing + drift);
+  delta.frontDelta += Math.round(swing + drift);
   c.front = Math.max(-100, Math.min(100, c.front + delta.frontDelta));
 
   // Airframes: losses hurt, the depot trickles replacements.

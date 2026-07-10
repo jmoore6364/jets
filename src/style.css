@@ -139,6 +139,10 @@ body.in-menu #scene { filter: brightness(0.35); }
   color: #cbbc94; font-size: 0.75rem;
 }
 .roster-pilot.kia { color: #7d6a5c; text-decoration: line-through; border-color: rgba(150,80,60,0.4); }
+.ace-line { margin-top: 0.55rem; color: #d89a8a; font-size: 0.88rem; }
+.ace-line b { color: #e8b0a0; }
+.ace-line.fallen { color: #9fb88a; }
+.ace-trophies { margin-top: 0.3rem; color: #8d8168; font-size: 0.75rem; font-style: italic; }
 .war-end {
   max-width: 34rem; width: 100%; padding: 0.8rem 1.2rem; border-radius: 5px;
   font-size: 1.05rem; letter-spacing: 0.12em;

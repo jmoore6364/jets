@@ -70,8 +70,15 @@ export class CareerUI {
       playerPlaneLost: !result.survived,
       wingmanName: mission.wingman?.name ?? null,
       wingmanKills: result.wingmanKills,
-      wingmanLost: result.wingmanLost
+      wingmanLost: result.wingmanLost,
+      aceKilled: result.aceKilled
     });
+
+    // Downing their champion is a headline and hard currency.
+    if (mission.ace && result.aceKilled) {
+      p.legacy += 25;
+      saveDynasty(d);
+    }
 
     const lines: string[] = [];
     lines.push(result.missionComplete ? 'Mission accomplished.' :
@@ -86,6 +93,13 @@ export class CareerUI {
     } else if (mission.wingman && delta.wingmanFate === 'down') {
       lines.push(`${mission.wingman.name} went down but walked away. He'll fly again.`);
     }
+    if (mission.ace && result.aceKilled) {
+      lines.push(`${mission.ace.name} — ${mission.ace.kills} victories — will never fly again. ` +
+        `The whole front knows by nightfall. +25 legacy.`);
+    } else if (mission.ace && !result.aceKilled) {
+      lines.push(`${mission.ace.name} slipped away. His score keeps growing.`);
+    }
+    if (delta.newAce) lines.push(`Word from across the lines: a new champion rises — ${delta.newAce}.`);
     if (delta.replacement) lines.push(`A replacement pilot joined the squadron: ${delta.replacement}.`);
     lines.push(`The front ${delta.frontDelta >= 0 ? 'moved our way' : 'slipped'} (${delta.frontDelta >= 0 ? '+' : ''}${delta.frontDelta}). ${warStatusLine(camp)}`);
     for (const m of cons.newMedals) lines.push(`Awarded the ${m.name}.`);
@@ -167,9 +181,17 @@ export class CareerUI {
     const roster = c.roster.map(pl =>
       `<span class="roster-pilot ${pl.status === 'kia' ? 'kia' : ''}">${pl.name}${pl.kills > 0 ? ` (${pl.kills})` : ''}</span>`
     ).join('');
+    const aceLine = c.ace.alive
+      ? `<div class="ace-line">Their champion: <b>${c.ace.name}</b> — ${c.ace.kills} kills and counting.</div>`
+      : `<div class="ace-line fallen">Their champion has fallen. The enemy flies leaderless — for now.</div>`;
+    const trophies = c.deadAces.length
+      ? `<div class="ace-trophies">Aces downed: ${c.deadAces.join(' · ')}</div>`
+      : '';
     return `
       <div class="war-panel">
         <div class="war-line">${warStatusLine(c)}</div>
+        ${aceLine}
+        ${trophies}
         <div class="front-bar"><div class="front-fill" style="width:${pct}%"></div><div class="front-mid"></div></div>
         <div class="war-meta">
           <span>DEFEAT</span>

@@ -42,6 +42,8 @@ export interface SessionResult {
   /** Campaign bookkeeping: how the squadron mate on your wing fared. */
   wingmanKills: number;
   wingmanLost: boolean;
+  /** The enemy ace flew this mission and went down. */
+  aceKilled: boolean;
 }
 
 function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
@@ -97,6 +99,9 @@ export class FlightSession {
   private playerDown: 'flying' | 'crashed' | 'shot-down' = 'flying';
   private kills = 0;
   private wingmanKills = 0;
+  /** The enemy ace's airframe this mission, if he's up. */
+  private aceCombatant: Combatant | null = null;
+  private aceKilled = false;
 
   // Modern weapons state
   private missileSystem: MissileSystem | null = null;
@@ -218,6 +223,19 @@ export class FlightSession {
       }
     }
 
+    // The enemy ace flies as one of them — better, tougher, and marked.
+    if (m.ace) {
+      const aceBird = this.combatants.find(c => c.side === 1 && c.alive);
+      if (aceBird) {
+        this.aceCombatant = aceBird;
+        this.pilots.set(aceBird, new AiPilot(gunFor(aceBird.spec), 0.95));
+        aceBird.maxHp += 2;
+        aceBird.hp = aceBird.maxHp;
+        this.paintAce(aceBird);
+        this.toast(`⚠ ${m.ace.name.toUpperCase()} IS AIRBORNE — ${m.ace.kills} KILLS`, 3200);
+      }
+    }
+
     if (m.type === 'balloon' && m.balloonAltM) {
       this.balloon = {
         mesh: this.buildBalloonMesh(),
@@ -285,6 +303,30 @@ export class FlightSession {
     return g;
   }
 
+  private noteAceDown(c: Combatant): void {
+    if (c !== this.aceCombatant || this.aceKilled || !this.mission?.ace) return;
+    this.aceKilled = true;
+    this.toast(`★ ${this.mission.ace.name.toUpperCase()} GOES DOWN ★`, 3600);
+  }
+
+  /** The ace wears his colors: all-red in 1917, red fins in 2026. */
+  private paintAce(c: Combatant): void {
+    const red = new THREE.Color(0xb02020);
+    if (c.spec.era === 'wwi') {
+      c.mesh.traverse(obj => {
+        const mesh = obj as THREE.Mesh;
+        const mat = mesh.material as THREE.MeshLambertMaterial | undefined;
+        if (mat?.color) mat.color.lerp(red, 0.7);
+      });
+    } else {
+      c.mesh.traverse(obj => {
+        if (obj.name !== 'fin') return;
+        const mat = (obj as THREE.Mesh).material as THREE.MeshLambertMaterial | undefined;
+        if (mat?.color) mat.color.setHex(0xb02020);
+      });
+    }
+  }
+
   /** A wingman on your wing, in every fight. Same mount as yours. */
   private spawnWingman(): void {
     const spec = this.player.spec;
@@ -334,7 +376,8 @@ export class FlightSession {
       survived: this.playerDown === 'flying',
       missionComplete: this.mission ? this.missionState === 'complete' : null,
       wingmanKills: this.wingmanKills,
-      wingmanLost: !!this.wingman && !this.wingman.alive
+      wingmanLost: !!this.wingman && !this.wingman.alive,
+      aceKilled: this.aceKilled
     };
   }
 
@@ -881,6 +924,7 @@ export class FlightSession {
         ? `${wm ? wm.toUpperCase() : 'YOUR WINGMAN'} GOES DOWN`
         : `${wm ? wm.toUpperCase() : 'WINGMAN'} IS DOWN`, 2600);
     }
+    if (wasAlive && !c.alive) this.noteAceDown(c);
   }
 
   private groundCheck(c: Combatant): void {
@@ -905,6 +949,7 @@ export class FlightSession {
           this.kills++;
           this.announceKill();
         }
+        this.noteAceDown(c);
       }
       this.effects.explosion(pos.clone());
       c.mesh.visible = false;

@@ -75,6 +75,27 @@ describe('campaign', () => {
     expect(c.roster.filter(p => p.status === 'active').length).toBeGreaterThanOrEqual(4);
   });
 
+  it('ace: score grows off-screen, dies on aceKilled, successor rises after two missions', () => {
+    const c = createCampaign('wwi', 'entente', () => 0.5);
+    const first = c.ace.name;
+    expect(c.ace.alive).toBe(true);
+    const k0 = c.ace.kills;
+
+    applyCampaignOutcome(c, win, () => 0.4); // rng < 0.5: +1 kill off-screen
+    expect(c.ace.kills).toBe(k0 + 1);
+
+    applyCampaignOutcome(c, { ...win, aceKilled: true }, () => 0.9);
+    expect(c.ace.alive).toBe(false);
+    expect(c.deadAces).toContain(first);
+
+    applyCampaignOutcome(c, win, () => 0.9); // sinceDeath 1
+    expect(c.ace.alive).toBe(false);
+    const d = applyCampaignOutcome(c, win, () => 0.9); // sinceDeath 2: successor
+    expect(d.newAce).not.toBeNull();
+    expect(c.ace.alive).toBe(true);
+    expect(c.ace.name).not.toBe(first);
+  });
+
   it('war status line tracks the front', () => {
     const c = createCampaign('wwi', 'entente', () => 0.5);
     c.front = 80;

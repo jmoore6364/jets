@@ -27,6 +27,8 @@ export interface Mission {
   heritage?: { name: string; victories: number };
   /** Campaign: the squadron mate flying your wing today. */
   wingman?: { name: string; skill: number; kills: number };
+  /** Campaign: the enemy ace is airborne in this sector. */
+  ace?: { name: string; kills: number };
 }
 
 const WWI_SECTORS = {
@@ -164,6 +166,14 @@ export function generateMission(
     if (campaign.front <= -35) m.enemyCount = Math.min(3, m.enemyCount + 1);
     const wm = pickWingman(campaign);
     if (wm) m.wingman = { name: wm.name, skill: wm.skill, kills: wm.kills };
+    // Sometimes, their champion is up. Balloon busts stay ace-free —
+    // that duel deserves open sky.
+    if (campaign.ace.alive && m.type !== 'balloon' && Math.random() < 0.35) {
+      m.ace = { name: campaign.ace.name, kills: campaign.ace.kills };
+      m.briefing += m.era === 'wwi'
+        ? ` One more thing: ${campaign.ace.name} hunts this sector — ${campaign.ace.kills} of ours went down to him. You'll know the aircraft when you see it.`
+        : ` Intel flags ${campaign.ace.name} airborne in the sector — ${campaign.ace.kills} allied losses to his name. Watch for the red-finned aircraft.`;
+    }
   }
   return m;
 }
