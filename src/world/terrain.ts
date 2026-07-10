@@ -91,6 +91,22 @@ export function randomTheater(era: Era): Theater {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+export type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night';
+export type Weather = 'clear' | 'scattered' | 'overcast';
+export interface Conditions {
+  time: TimeOfDay;
+  weather: Weather;
+}
+
+export function randomConditions(): Conditions {
+  const times: TimeOfDay[] = ['dawn', 'day', 'day', 'day', 'dusk', 'night'];
+  const wx: Weather[] = ['clear', 'clear', 'scattered', 'scattered', 'overcast'];
+  return {
+    time: times[Math.floor(Math.random() * times.length)],
+    weather: wx[Math.floor(Math.random() * wx.length)]
+  };
+}
+
 export interface EraEnvironment {
   /** Collision height — never below the water surface where there is one. */
   terrainHeight(x: number, z: number): number;
@@ -111,8 +127,9 @@ function smooth01(v: number): number {
   return t * t * (3 - 2 * t);
 }
 
-export function buildEnvironment(era: Era, theater?: Theater): EraEnvironment {
+export function buildEnvironment(era: Era, theater?: Theater, conditions?: Conditions): EraEnvironment {
   const th: Theater = theater ?? (era === 'modern' ? 'desert' : 'flanders');
+  const cond: Conditions = conditions ?? { time: 'day', weather: 'scattered' };
   const group = new THREE.Group();
 
   const heightScale = era === 'modern' ? 900 : 120;
@@ -210,12 +227,19 @@ export function buildEnvironment(era: Era, theater?: Theater): EraEnvironment {
     group.add(water);
   }
 
-  // Lighting
-  const sun = new THREE.DirectionalLight(0xffffff, era === 'modern' ? 2.6 : 1.9);
-  sun.position.set(-3000, 5000, -2000);
+  // Lighting: the sun's angle, color, and strength follow the clock.
+  const sunConf = {
+    dawn: { pos: [4500, 1400, -1200] as const, color: 0xffb070, mult: 0.62 },
+    day: { pos: [-3000, 5000, -2000] as const, color: 0xffffff, mult: 1 },
+    dusk: { pos: [-4800, 1100, 1600] as const, color: 0xff8a50, mult: 0.55 },
+    night: { pos: [-2000, 4200, 2500] as const, color: 0xa8bfff, mult: 0.13 }
+  }[cond.time];
+  const overcastSun = cond.weather === 'overcast' ? 0.75 : 1;
+  const sun = new THREE.DirectionalLight(sunConf.color, (era === 'modern' ? 2.6 : 1.9) * sunConf.mult * overcastSun);
+  sun.position.set(sunConf.pos[0], sunConf.pos[1], sunConf.pos[2]);
   group.add(sun);
 
-  // Visible sun disc + glow, far along the light direction
+  // Visible sun disc + glow (or the moon), far along the light direction
   const sunDir = sun.position.clone().normalize();
   const glowTex = makeGlowTexture();
   const mkGlow = (size: number, opacity: number, color: number) => {
@@ -227,29 +251,58 @@ export function buildEnvironment(era: Era, theater?: Theater): EraEnvironment {
     s.scale.setScalar(size);
     return s;
   };
-  group.add(mkGlow(2600, 0.9, 0xfff3d0), mkGlow(7000, 0.28, era === 'modern' ? 0xffe9b0 : 0xf5e6c8));
+  if (cond.time === 'night') {
+    group.add(mkGlow(1100, 0.85, 0xe8eeff)); // the moon
+    // Stars on the dome
+    const starPos = new Float32Array(450 * 3);
+    for (let i = 0; i < 450; i++) {
+      const az = hash2(i, 11) * Math.PI * 2;
+      const el = 0.06 + hash2(i, 13) * 1.4;
+      starPos[i * 3] = Math.cos(el) * Math.sin(az) * 19000;
+      starPos[i * 3 + 1] = Math.sin(el) * 19000;
+      starPos[i * 3 + 2] = Math.cos(el) * Math.cos(az) * 19000;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    group.add(new THREE.Points(starGeo, new THREE.PointsMaterial({
+      color: 0xdfe8ff, size: 42, sizeAttenuation: true, fog: false, transparent: true, opacity: 0.9
+    })));
+  } else {
+    const warm = cond.time !== 'day';
+    group.add(
+      mkGlow(2600, 0.9, warm ? 0xffb060 : 0xfff3d0),
+      mkGlow(7000, 0.28, warm ? 0xff8a50 : era === 'modern' ? 0xffe9b0 : 0xf5e6c8)
+    );
+  }
 
-  // Cloud layer: soft static billboards drifting over the map
+  // Cloud layer: soft static billboards; the weather decides how many.
   const cloudTextures = [makeCloudTexture(1), makeCloudTexture(2), makeCloudTexture(3)];
-  const cloudBase = era === 'modern' ? 2400 : 1100;
-  for (let i = 0; i < 26; i++) {
+  const cloudCount = cond.weather === 'clear' ? 7 : cond.weather === 'scattered' ? 26 : 55;
+  const cloudScale = cond.weather === 'overcast' ? 1.6 : 1;
+  let cloudBase = era === 'modern' ? 2400 : 1100;
+  if (cond.weather === 'overcast') cloudBase *= 0.72;
+  const cloudTint = cond.time === 'night' ? 0x2a3448
+    : cond.time === 'dawn' ? 0xffd8b8
+    : cond.time === 'dusk' ? 0xffc4a0 : 0xffffff;
+  for (let i = 0; i < cloudCount; i++) {
     const c1 = new THREE.Sprite(new THREE.SpriteMaterial({
       map: cloudTextures[i % cloudTextures.length],
-      color: 0xffffff, transparent: true, depthWrite: false,
-      opacity: 0.5 + hash2(i, 7) * 0.3
+      color: cloudTint, transparent: true, depthWrite: false,
+      opacity: (cond.weather === 'overcast' ? 0.66 : 0.5) + hash2(i, 7) * 0.3
     }));
     c1.position.set(
       (hash2(i, 1) - 0.5) * SIZE * 0.9,
-      cloudBase + hash2(i, 2) * 900,
+      cloudBase + hash2(i, 2) * (cond.weather === 'overcast' ? 350 : 900),
       (hash2(i, 3) - 0.5) * SIZE * 0.9
     );
-    c1.scale.set(500 + hash2(i, 4) * 700, 130 + hash2(i, 5) * 160, 1);
+    c1.scale.set((500 + hash2(i, 4) * 700) * cloudScale, (130 + hash2(i, 5) * 160) * cloudScale, 1);
     group.add(c1);
   }
+  const timeHemi = cond.time === 'night' ? 0.22 : cond.time === 'day' ? 1 : 0.72;
   const hemi = new THREE.HemisphereLight(
-    era === 'modern' ? 0xbfd8ff : 0xcfd8d0,
+    cond.time === 'night' ? 0x2a3a58 : era === 'modern' ? 0xbfd8ff : 0xcfd8d0,
     era === 'modern' ? 0x8a6f4f : 0x3d4a2f,
-    era === 'modern' ? 0.9 : 0.8
+    (era === 'modern' ? 0.9 : 0.8) * timeHemi * (cond.weather === 'overcast' ? 0.85 : 1)
   );
   group.add(hemi);
 
@@ -261,14 +314,31 @@ export function buildEnvironment(era: Era, theater?: Theater): EraEnvironment {
     coast: { sky: 0x9db6c4, fog: 0xb9c8cc, density: 0.0001 }
   };
   const pal = palettes[th];
+  const skyColor = new THREE.Color(pal.sky);
+  const fogColor = new THREE.Color(pal.fog);
+  let fogDensity = pal.density;
+  if (cond.time === 'dawn') {
+    skyColor.lerp(new THREE.Color(0xff9a5a), 0.28).multiplyScalar(0.92);
+    fogColor.lerp(new THREE.Color(0xffb080), 0.35);
+  } else if (cond.time === 'dusk') {
+    skyColor.lerp(new THREE.Color(0xd0603a), 0.35).multiplyScalar(0.82);
+    fogColor.lerp(new THREE.Color(0xd08060), 0.4).multiplyScalar(0.88);
+  } else if (cond.time === 'night') {
+    skyColor.multiplyScalar(0.1).lerp(new THREE.Color(0x0a1424), 0.7);
+    fogColor.multiplyScalar(0.12).lerp(new THREE.Color(0x0a1220), 0.6);
+  }
+  if (cond.weather === 'overcast') {
+    skyColor.lerp(fogColor, cond.time === 'night' ? 0.3 : 0.55);
+    fogDensity *= 1.7;
+  }
 
   return {
     terrainHeight,
     theater: th,
     waterY: hasWater ? 0 : null,
     group,
-    skyColor: new THREE.Color(pal.sky),
-    fogColor: new THREE.Color(pal.fog),
-    fogDensity: pal.density
+    skyColor,
+    fogColor,
+    fogDensity
   };
 }

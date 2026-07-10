@@ -7,7 +7,7 @@ import type { Era } from '../engine/flight/aircraft';
 import type { Side, PilotRecord, Dynasty } from '../career/dynasty';
 import { formatDate, wwiFounderAce } from '../career/dynasty';
 import { pickWingman, warStatusLine, type Campaign } from '../career/campaign';
-import type { Theater } from '../world/terrain';
+import { randomConditions, type Theater, type Conditions } from '../world/terrain';
 
 export type MissionType = 'patrol' | 'balloon' | 'escort' | 'intercept' | 'strike';
 
@@ -19,6 +19,8 @@ export interface Mission {
   side: Side;
   /** Landscape this mission is flown over; 'ocean' launches from the carrier. */
   theater: Theater;
+  /** Time of day + weather over the target. */
+  conditions?: Conditions;
   /** Objective area, world coords relative to spawn at origin. */
   zone: { x: number; z: number };
   enemyCount: number;
@@ -168,6 +170,19 @@ export function generateMission(
   campaign: Campaign | null = null
 ): Mission {
   const m = pilot.era === 'modern' ? generateModern(pilot, dynasty) : generateWwi(pilot);
+  m.conditions = randomConditions();
+  const condLine = {
+    dawn: 'Time on target: first light.',
+    day: '',
+    dusk: 'Time on target: last light — the sun will be in somebody\'s eyes.',
+    night: 'A night sortie. Navigation lights off, eyes open.'
+  }[m.conditions.time];
+  const wxLine = {
+    clear: '',
+    scattered: '',
+    overcast: ' A solid deck sits over the sector; the fight happens under it.'
+  }[m.conditions.weather];
+  if (condLine || wxLine) m.briefing += ` ${condLine}${wxLine}`;
   if (m.theater === 'ocean') {
     m.briefing += ' You launch from the carrier — full burner off the deck, and the wire is waiting when it\'s done.';
   }

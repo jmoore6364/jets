@@ -7,7 +7,10 @@
 import * as THREE from 'three';
 import type { AircraftSpec } from '../engine/flight/aircraft';
 import { InputManager } from '../engine/input';
-import { buildEnvironment, randomTheater, THEATERS, type EraEnvironment, type Theater } from '../world/terrain';
+import {
+  buildEnvironment, randomTheater, randomConditions, THEATERS,
+  type EraEnvironment, type Theater, type TimeOfDay, type Weather
+} from '../world/terrain';
 import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
@@ -138,12 +141,18 @@ export class FlightSession {
     private mission: Mission | null = null,
     private audio: AudioEngine | null = null
   ) {
-    // Debug/testing hook: ?theater=ocean forces a landscape.
-    const forced = new URLSearchParams(window.location.search).get('theater') as Theater | null;
+    // Debug/testing hooks: ?theater=ocean&time=night&weather=overcast force conditions.
+    const qp = new URLSearchParams(window.location.search);
+    const forced = qp.get('theater') as Theater | null;
     const theater = forced && THEATERS[spec.era].includes(forced)
       ? forced
       : mission?.theater ?? randomTheater(spec.era);
-    this.env = buildEnvironment(spec.era, theater);
+    const cond = mission?.conditions ?? randomConditions();
+    const fTime = qp.get('time') as TimeOfDay | null;
+    const fWx = qp.get('weather') as Weather | null;
+    if (fTime && ['dawn', 'day', 'dusk', 'night'].includes(fTime)) cond.time = fTime;
+    if (fWx && ['clear', 'scattered', 'overcast'].includes(fWx)) cond.weather = fWx;
+    this.env = buildEnvironment(spec.era, theater, cond);
     this.scene.add(this.env.group);
     this.scene.background = this.env.skyColor;
     this.scene.fog = new THREE.FogExp2(this.env.fogColor, this.env.fogDensity);
