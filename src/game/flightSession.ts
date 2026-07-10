@@ -46,13 +46,15 @@ export interface SessionResult {
   aceKilled: boolean;
 }
 
+const WWI_CENTRAL_IDS = ['fokker-dr1', 'fokker-d7'];
+
 function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
   if (player.era === 'modern') return MIG29;
-  return player.id === 'fokker-dr1' ? SOPWITH_CAMEL : FOKKER_DR1;
+  return wwiEnemyOf(player);
 }
 
 function wwiEnemyOf(player: AircraftSpec): AircraftSpec {
-  return player.id === 'fokker-dr1' ? SOPWITH_CAMEL : FOKKER_DR1;
+  return WWI_CENTRAL_IDS.includes(player.id) ? SOPWITH_CAMEL : FOKKER_DR1;
 }
 
 export class FlightSession {

@@ -5,8 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { FlightModel, aeroCoefficients, airDensity } from '../src/engine/flight/flightModel';
-import { FOKKER_DR1, SOPWITH_CAMEL } from '../src/era/wwi/aircraft';
-import { F16 } from '../src/era/modern/aircraft';
+import { FOKKER_DR1, SOPWITH_CAMEL, WWI_AIRCRAFT } from '../src/era/wwi/aircraft';
+import { F16, MODERN_AIRCRAFT } from '../src/era/modern/aircraft';
 
 function freshModel(spec = F16, speed = spec.cruiseSpeedMs) {
   const m = new FlightModel(spec);
@@ -227,7 +227,7 @@ describe('flight behavior', () => {
   });
 
   it('WWI and modern aircraft both fly with the same engine code', () => {
-    for (const spec of [FOKKER_DR1, SOPWITH_CAMEL, F16]) {
+    for (const spec of [...WWI_AIRCRAFT, ...MODERN_AIRCRAFT]) {
       const m = freshModel(spec);
       run(m, 3);
       expect(Number.isFinite(m.position.y)).toBe(true);

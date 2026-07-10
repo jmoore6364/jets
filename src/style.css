@@ -143,6 +143,14 @@ body.in-menu #scene { filter: brightness(0.35); }
 .ace-line b { color: #e8b0a0; }
 .ace-line.fallen { color: #9fb88a; }
 .ace-trophies { margin-top: 0.3rem; color: #8d8168; font-size: 0.75rem; font-style: italic; }
+.era button.locked { opacity: 0.45; cursor: default; font-style: italic; }
+.mount-pick { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
+.mount-pick button {
+  padding: 0.45rem 1rem; background: rgba(255,255,255,0.04); color: #a89a78;
+  border: 1px solid rgba(232,217,176,0.3); border-radius: 4px; cursor: pointer;
+  font-family: inherit; font-size: 0.8rem; letter-spacing: 0.08em;
+}
+.mount-pick button.active { border-color: #e8b64a; color: #ffd98a; background: rgba(232,182,74,0.12); }
 .war-end {
   max-width: 34rem; width: 100%; padding: 0.8rem 1.2rem; border-radius: 5px;
   font-size: 1.05rem; letter-spacing: 0.12em;

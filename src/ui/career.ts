@@ -13,6 +13,7 @@ import {
 } from '../career/dynasty';
 import { LEGACY_UNLOCKS, availableLegacy, buyUnlock, hasUnlock } from '../career/legacyShop';
 import { getCampaign, applyCampaignOutcome, warStatusLine, type Campaign } from '../career/campaign';
+import { availableMounts, selectedMount, setMount } from '../game/mount';
 import { generateMission, type Mission } from '../game/mission';
 import type { SessionResult } from '../game/flightSession';
 
@@ -209,7 +210,7 @@ export class CareerUI {
     const rows = LEGACY_UNLOCKS.map(u => {
       const owned = hasUnlock(d, u.id);
       const affordable = avail >= u.cost;
-      const eraTag = u.era === 'modern' ? '2026' : '1917 + 2026';
+      const eraTag = u.era === 'modern' ? '2026' : u.era === 'wwi' ? '1917' : '1917 + 2026';
       const action = owned
         ? '<span class="shop-owned">OWNED</span>'
         : `<button data-buy="${u.id}" ${affordable ? '' : 'disabled'}>${u.cost} PTS</button>`;
@@ -288,10 +289,22 @@ export class CareerUI {
   private showBriefing(): void {
     const d = this.dynasty!;
     const p = activePilot(d, this.era)!;
-    const mission = generateMission(p, d, getCampaign(this.era, p.side));
-    this.pendingMission = mission;
+    this.pendingMission = generateMission(p, d, getCampaign(this.era, p.side));
+    this.renderBriefing();
+  }
+
+  private renderBriefing(): void {
+    const d = this.dynasty!;
+    const p = activePilot(d, this.era)!;
+    const mission = this.pendingMission!;
     const wingLine = mission.wingman
       ? `<p class="briefing-meta">On your wing: ${mission.wingman.name}${mission.wingman.kills > 0 ? ` — ${mission.wingman.kills} kills` : ' — first tour'}.</p>`
+      : '';
+    const mounts = availableMounts(p.side);
+    const current = selectedMount(p.side);
+    const mountRow = mounts.length > 1
+      ? `<div class="mount-pick">${mounts.map(s =>
+          `<button data-mount="${s.id}" class="${s.id === current.id ? 'active' : ''}">${s.name}</button>`).join('')}</div>`
       : '';
     this.root.innerHTML = `
       <h2 class="career-h">${mission.title}</h2>
@@ -299,12 +312,19 @@ export class CareerUI {
         <p>${mission.briefing}</p>
         ${wingLine}
         <p class="briefing-meta">${rankOf(p)} ${p.firstName} ${d.surname} · ${p.squadron} ·
-          mount: ${aircraftForSide(p.side).name}</p>
+          mount: ${current.name}</p>
       </div>
+      ${mountRow}
       <div class="career-actions">
         <button data-act="takeoff" class="primary">TAKE OFF</button>
         <button data-act="home">STAND DOWN</button>
       </div>`;
+    this.root.querySelectorAll<HTMLButtonElement>('button[data-mount]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setMount(p.side, btn.dataset.mount!);
+        this.renderBriefing();
+      });
+    });
     this.bind();
   }
 
@@ -318,7 +338,7 @@ export class CareerUI {
         else if (act === 'fly') this.showBriefing();
         else if (act === 'takeoff' && this.pendingMission) {
           const p = activePilot(this.dynasty!, this.era)!;
-          this.opts.onFly(this.pendingMission, aircraftForSide(p.side));
+          this.opts.onFly(this.pendingMission, selectedMount(p.side));
         }
       });
     });

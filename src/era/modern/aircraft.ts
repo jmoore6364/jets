@@ -38,6 +38,27 @@ export const F16: AircraftSpec = {
   cruiseSpeedMs: 180
 };
 
+/** Legacy-shop unlock: the Navy's knife fighter. Slower than the Viper,
+ * but it holds angles of attack the Viper's limiter won't even discuss. */
+export const FA18: AircraftSpec = {
+  ...F16,
+  id: 'fa18',
+  name: 'F/A-18C Hornet',
+  massKg: 16800,
+  inertia: { pitch: 110000, yaw: 125000, roll: 22000 },
+  wingAreaM2: 37.2,
+  wingSpanM: 11.4,
+  chordM: 3.5,
+  aspectRatio: 3.5,
+  cd0: 0.020,
+  clMax: 1.8,
+  alphaStallRad: 0.61,
+  fbw: { alphaLimitRad: 0.56, gLimit: 7.5 }, // 32° AoA, 7.5 G — Hornet paperwork
+  brakeDrag: 0.05,
+  propulsion: { kind: 'jet', milThrustN: 97000, abThrustN: 158000 },
+  cruiseSpeedMs: 170
+};
+
 /** Bandit only for now — flyable once the campaign opens up. */
 export const MIG29: AircraftSpec = {
   ...F16,
@@ -55,4 +76,4 @@ export const MIG29: AircraftSpec = {
   cruiseSpeedMs: 175
 };
 
-export const MODERN_AIRCRAFT = [F16];
+export const MODERN_AIRCRAFT = [F16, FA18];

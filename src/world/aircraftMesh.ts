@@ -44,8 +44,11 @@ function muzzleFlash(): THREE.Sprite {
 function buildWwi(spec: AircraftSpec): THREE.Group {
   const g = new THREE.Group();
   const isDr1 = spec.id === 'fokker-dr1';
-  const paint = isDr1 ? 0xb02020 : 0x9a8449;
+  const isSpad = spec.id === 'spad13';
+  const isD7 = spec.id === 'fokker-d7';
+  const paint = isDr1 ? 0xb02020 : isSpad ? 0xb09a62 : isD7 ? 0x55684e : 0x9a8449;
   const wingCount = isDr1 ? 3 : 2;
+  const entente = spec.id === 'sopwith-camel' || isSpad;
   const span = spec.wingSpanM;
 
   // Fuselage: nose box + tapering rear
@@ -67,8 +70,8 @@ function buildWwi(spec: AircraftSpec): THREE.Group {
     const wing = box(span - i * 0.5, 0.13, 1.45, paint);
     wing.position.set(0, -0.35 + i * 0.85, -0.7 - i * 0.18);
     g.add(wing);
-    if (spec.id === 'sopwith-camel' && i === wingCount - 1) {
-      // RAF roundels on the top wing
+    if (entente && i === wingCount - 1) {
+      // Allied roundels on the top wing
       for (const sx of [-span * 0.32, span * 0.32]) {
         const r1 = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16), mat(0x1a3a8a));
         r1.rotation.x = -Math.PI / 2; r1.position.set(sx, 0.075, -0.7 - i * 0.18);
@@ -99,8 +102,10 @@ function buildWwi(spec: AircraftSpec): THREE.Group {
   fin.position.set(0, 0.6, 3.2);
   g.add(fin);
 
-  // Round cowl + prop
-  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.52, 0.7, 12), mat(0x6e6e72));
+  // Nose: round rotary cowl, or a flat radiator for the inline-engined birds
+  const cowl = isSpad || isD7
+    ? new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.9, 0.6), mat(0x6e6e72))
+    : new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.52, 0.7, 12), mat(0x6e6e72));
   cowl.rotation.x = Math.PI / 2;
   cowl.position.set(0, 0, -2.65);
   g.add(cowl);
@@ -134,8 +139,9 @@ function buildWwi(spec: AircraftSpec): THREE.Group {
 function buildModern(spec: AircraftSpec): THREE.Group {
   const g = new THREE.Group();
   const mig = spec.id === 'mig29';
-  const skin = mig ? 0x5d6b75 : 0x8b95a1;
-  const dark = mig ? 0x46525b : 0x77808c;
+  const hornet = spec.id === 'fa18';
+  const skin = mig ? 0x5d6b75 : hornet ? 0x9aa4ad : 0x8b95a1;
+  const dark = mig ? 0x46525b : hornet ? 0x7f8992 : 0x77808c;
 
   // Fuselage: tapered central body
   const bodyGeo = new THREE.CylinderGeometry(0.62, 0.55, 9.6, 10);
@@ -159,10 +165,10 @@ function buildModern(spec: AircraftSpec): THREE.Group {
   canopy.position.set(0, 0.55, -2.9);
   g.add(canopy);
 
-  if (mig) {
-    // Twin shoulder-mounted nacelles
-    for (const sx of [-0.75, 0.75]) {
-      const nacGeo = new THREE.CylinderGeometry(0.42, 0.4, 6.2, 8);
+  if (mig || hornet) {
+    // Twin engine nacelles (shoulder-mounted on the MiG, tucked on the Hornet)
+    for (const sx of mig ? [-0.75, 0.75] : [-0.58, 0.58]) {
+      const nacGeo = new THREE.CylinderGeometry(mig ? 0.42 : 0.38, mig ? 0.4 : 0.36, 6.2, 8);
       nacGeo.rotateX(Math.PI / 2);
       const nac = new THREE.Mesh(nacGeo, mat(dark));
       nac.position.set(sx, -0.25, 2.0);
@@ -210,6 +216,8 @@ function buildModern(spec: AircraftSpec): THREE.Group {
   };
   if (mig) {
     g.add(makeFin(-0.75, 0.16), makeFin(0.75, -0.16));
+  } else if (hornet) {
+    g.add(makeFin(-0.62, 0.35), makeFin(0.62, -0.35)); // the Hornet's hard cant
   } else {
     g.add(makeFin(0, 0));
   }

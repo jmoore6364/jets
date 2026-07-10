@@ -14,7 +14,7 @@ export interface LegacyUnlock {
   desc: string;
   cost: number;
   /** Which era benefits (cosmetic label — perks no-op where irrelevant). */
-  era: 'both' | 'modern';
+  era: 'both' | 'modern' | 'wwi';
 }
 
 export const LEGACY_UNLOCKS: LegacyUnlock[] = [
@@ -45,6 +45,20 @@ export const LEGACY_UNLOCKS: LegacyUnlock[] = [
     desc: 'Your mount absorbs 30% more damage. A century of family notes on what breaks first.',
     cost: 80,
     era: 'both'
+  },
+  {
+    id: 'late-birds',
+    name: 'Late-War Fighters',
+    desc: 'The SPAD S.XIII (heavy, fast, dives like an anvil) and the Fokker D.VII (hangs on its prop) join the family stable.',
+    cost: 100,
+    era: 'wwi'
+  },
+  {
+    id: 'fa18',
+    name: 'F/A-18C Hornet',
+    desc: "A second modern mount: slower than the Viper, but it turns like a knife fight and holds alpha the Viper's limiter won't allow.",
+    cost: 120,
+    era: 'modern'
   }
 ];
 

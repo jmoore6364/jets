@@ -8,6 +8,9 @@ import { MODERN_AIRCRAFT } from '../era/modern/aircraft';
 import { isTouchDevice } from './touch';
 import { getHandling, setHandling } from '../game/handling';
 import { getDifficulty, setDifficulty, type Difficulty } from '../game/difficulty';
+import { UNLOCK_FOR } from '../game/mount';
+import { loadDynasty } from '../career/dynasty';
+import { hasUnlock } from '../career/legacyShop';
 
 export class MainMenu {
   private root: HTMLElement;
@@ -41,11 +44,19 @@ export class MainMenu {
       <p class="build-stamp">build ${typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev'}</p>`;
 
     const sections = this.root.querySelectorAll('.planes');
+    const dynasty = loadDynasty();
     const fill = (el: Element, list: AircraftSpec[]) => {
       for (const spec of list) {
         const btn = document.createElement('button');
-        btn.textContent = `SKIRMISH — ${spec.name}`;
-        btn.addEventListener('click', () => onSelect(spec));
+        const need = UNLOCK_FOR[spec.id];
+        if (need && !hasUnlock(dynasty, need)) {
+          btn.textContent = `🔒 ${spec.name} — LEGACY SHOP`;
+          btn.disabled = true;
+          btn.classList.add('locked');
+        } else {
+          btn.textContent = `SKIRMISH — ${spec.name}`;
+          btn.addEventListener('click', () => onSelect(spec));
+        }
         el.appendChild(btn);
       }
     };
