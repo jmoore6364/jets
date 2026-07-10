@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import type { AircraftSpec } from '../engine/flight/aircraft';
 import { InputManager } from '../engine/input';
-import { buildEnvironment, type EraEnvironment } from '../world/terrain';
+import { buildEnvironment, randomTheater, THEATERS, type EraEnvironment, type Theater } from '../world/terrain';
 import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
@@ -82,8 +82,13 @@ export class FlightSession {
   private sam: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean; cooldown: number } | null = null;
   /** Ground fire over defended territory. */
   private flak: FlakSystem;
-  /** The home strip: land here gently and you walk away with a bonus. */
+  /** The home strip or carrier deck: land here gently for the bonus. */
   private homeField: { xMin: number; xMax: number; zMin: number; zMax: number } | null = null;
+  /** Deck surface height when home plate is the carrier; null on land. */
+  private homeDeckY: number | null = null;
+  /** Takeoff ground roll: the session owns the physics until rotation. */
+  private groundRoll = false;
+  private groundSpeed = 0;
 
   private hud: CockpitHud;
   private input = new InputManager();
@@ -133,7 +138,12 @@ export class FlightSession {
     private mission: Mission | null = null,
     private audio: AudioEngine | null = null
   ) {
-    this.env = buildEnvironment(spec.era);
+    // Debug/testing hook: ?theater=ocean forces a landscape.
+    const forced = new URLSearchParams(window.location.search).get('theater') as Theater | null;
+    const theater = forced && THEATERS[spec.era].includes(forced)
+      ? forced
+      : mission?.theater ?? randomTheater(spec.era);
+    this.env = buildEnvironment(spec.era, theater);
     this.scene.add(this.env.group);
     this.scene.background = this.env.skyColor;
     this.scene.fog = new THREE.FogExp2(this.env.fogColor, this.env.fogDensity);
@@ -162,8 +172,13 @@ export class FlightSession {
     this.player = this.addCombatant(spec, 0, getHandling() === 'arcade');
     this.perks = dynastyPerks(loadDynasty());
     this.player.applyPerks(this.perks);
-    const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
-    this.player.respawn(0, alt, 0, spec.cruiseSpeedMs * 1.1, 0);
+    if (mission) {
+      // A career sortie starts where sorties start: on the strip or the deck.
+      this.startGroundRoll();
+    } else {
+      const alt = this.env.terrainHeight(0, 0) + SPAWN_ALT[spec.era];
+      this.player.respawn(0, alt, 0, spec.cruiseSpeedMs * 1.1, 0);
+    }
 
     this.spawnWingman();
     if (mission) {
@@ -180,7 +195,7 @@ export class FlightSession {
 
     this.hud = createHud(uiRoot, this.player.model, this.input);
     this.input.attach();
-    this.input.throttle = spec.propulsion.kind === 'jet' ? 0.85 : 0.8;
+    this.input.throttle = this.groundRoll ? 0 : spec.propulsion.kind === 'jet' ? 0.85 : 0.8;
     if (isTouchDevice()) {
       this.touch = new TouchControls(uiRoot, this.input);
       this.input.touch = this.touch;
@@ -301,8 +316,12 @@ export class FlightSession {
     }
   }
 
-  /** Home plate: a strip behind the spawn point, aligned with initial heading. */
+  /** Home plate: a land strip, or the carrier when the theater is blue water. */
   private buildAirfield(era: 'wwi' | 'modern'): void {
+    if (this.env.theater === 'ocean') {
+      this.buildCarrier();
+      return;
+    }
     const y = this.env.terrainHeight(0, -200) + 0.4;
     const g = new THREE.Group();
 
@@ -338,6 +357,147 @@ export class FlightSession {
 
     this.scene.add(g);
     this.homeField = { xMin: -26, xMax: 26, zMin: -820, zMax: 420 };
+  }
+
+  /** The boat. Hull, deck, island — home plate in the ocean theater. */
+  private buildCarrier(): void {
+    const g = new THREE.Group();
+    const deckY = 20;
+
+    const hull = new THREE.Mesh(
+      new THREE.BoxGeometry(34, 18, 300),
+      new THREE.MeshLambertMaterial({ color: 0x5d646b, flatShading: true })
+    );
+    hull.position.y = deckY - 9.8;
+    g.add(hull);
+
+    const deck = new THREE.Mesh(
+      new THREE.BoxGeometry(46, 1.6, 312),
+      new THREE.MeshLambertMaterial({ color: 0x3c4045, flatShading: true })
+    );
+    deck.position.y = deckY - 0.8;
+    g.add(deck);
+
+    // Centerline dashes
+    for (let z = -140; z <= 140; z += 34) {
+      const dash = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.2, 16),
+        new THREE.MeshLambertMaterial({ color: 0xd8d8ce })
+      );
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(0, deckY + 0.05, z);
+      g.add(dash);
+    }
+
+    const island = new THREE.Mesh(
+      new THREE.BoxGeometry(9, 16, 24),
+      new THREE.MeshLambertMaterial({ color: 0x51575d, flatShading: true })
+    );
+    island.position.set(19, deckY + 8, 42);
+    g.add(island);
+
+    g.position.set(0, 0, -200);
+    this.scene.add(g);
+
+    this.homeDeckY = deckY;
+    this.homeField = { xMin: -23, xMax: 23, zMin: -356, zMax: -44 };
+  }
+
+  /**
+   * Ground height including the carrier deck (player physics only).
+   * The deck only counts near deck height — below that you're alongside
+   * the hull, not on the roof.
+   */
+  private groundHeightAt(x: number, z: number, y = Infinity): number {
+    const g = this.env.terrainHeight(x, z);
+    const f = this.homeField;
+    if (this.homeDeckY !== null && f && y > this.homeDeckY - 2
+      && x > f.xMin && x < f.xMax && z > f.zMin && z < f.zMax) {
+      return Math.max(g, this.homeDeckY);
+    }
+    return g;
+  }
+
+  // ---------------- Takeoff ----------------
+
+  private rotateSpeed(): number {
+    return this.player.spec.era === 'modern' ? 72 : this.player.spec.cruiseSpeedMs * 0.75;
+  }
+
+  /** Park on the strip (or the cat) and hand the throttle to the pilot. */
+  private startGroundRoll(): void {
+    const onCarrier = this.homeDeckY !== null;
+    const z0 = onCarrier ? -70 : 380;
+    const y = this.groundHeightAt(0, z0) + 1.5;
+    this.player.model.spawn(0, y, z0, 0, 0);
+    this.groundRoll = true;
+    this.groundSpeed = 0;
+    const rotKts = Math.round(this.rotateSpeed() * 1.94384);
+    this.toast(
+      onCarrier ? `ON THE CAT — burner up, rotate at ${rotKts} kt`
+        : this.player.spec.era === 'modern' ? `CLEARED FOR TAKEOFF — rotate at ${rotKts} kt`
+        : 'CLEARED FOR TAKEOFF — full throttle, ease back when she\'s light',
+      4500
+    );
+  }
+
+  /**
+   * Kinematic ground roll: thrust vs rolling drag along the strip, level
+   * attitude, nosewheel steering on the rudder. The flight model takes
+   * over at rotation (or at the end of the deck, ready or not).
+   */
+  private stepGroundRoll(dt: number): void {
+    const m = this.player.model;
+    const c = m.controls;
+    const spec = this.player.spec;
+    const prop = spec.propulsion;
+    const onCarrier = this.homeDeckY !== null;
+
+    let thrust = prop.kind === 'jet'
+      ? (c.afterburner ? prop.abThrustN : prop.milThrustN * c.throttle)
+      : prop.maxStaticThrustN * c.throttle;
+    if (onCarrier && this.groundSpeed < 65) thrust += spec.massKg * 9; // the cat stroke
+
+    const rolling = 0.03 * spec.massKg * 9.81;
+    const aeroDrag = 0.5 * 1.225 * this.groundSpeed * this.groundSpeed * spec.wingAreaM2 * 0.06;
+    this.groundSpeed = Math.max(0, this.groundSpeed + ((thrust - rolling - aeroDrag) / spec.massKg) * dt);
+
+    // Level attitude; rudder steers the nosewheel once rolling.
+    const e = new THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ');
+    e.y += -c.yaw * 0.25 * dt * Math.min(this.groundSpeed / 10, 1);
+    m.quaternion.setFromEuler(new THREE.Euler(0, e.y, 0, 'YXZ'));
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(m.quaternion);
+    m.velocity.copy(fwd).multiplyScalar(this.groundSpeed);
+    m.position.addScaledVector(m.velocity, dt);
+    m.position.y = this.groundHeightAt(m.position.x, m.position.z) + 1.5;
+
+    // Keep the HUD honest while the session owns the physics.
+    const sample = (m as unknown as { lastSample: { speedMs: number; altitudeM: number; headingRad: number } }).lastSample;
+    sample.speedMs = this.groundSpeed;
+    sample.altitudeM = m.position.y;
+    sample.headingRad = Math.atan2(fwd.x, -fwd.z);
+
+    const vRot = this.rotateSpeed();
+    if (this.groundSpeed > vRot && c.pitch > 0.15) {
+      this.liftOff();
+      return;
+    }
+    const f = this.homeField;
+    if (f) {
+      const off = m.position.x < f.xMin || m.position.x > f.xMax || m.position.z < f.zMin || m.position.z > f.zMax;
+      if (off) {
+        // End of the pavement. Fast enough and you fly; too slow and the
+        // flight model inherits the problem — the sea is very patient.
+        this.groundRoll = false;
+        if (this.groundSpeed > vRot * 0.85) this.liftOff();
+      }
+    }
+  }
+
+  private liftOff(): void {
+    this.groundRoll = false;
+    this.player.model.velocity.y = 3;
+    this.toast('AIRBORNE', 2000);
   }
 
   /** Ground fire while over defended territory (career missions only). */
@@ -857,7 +1017,13 @@ export class FlightSession {
       pilot.update(dt, c.model, this.pickTarget(c)?.model ?? null, agl);
     }
 
-    for (const c of this.combatants) c.model.step(dt);
+    for (const c of this.combatants) {
+      if (c === this.player && this.groundRoll) {
+        this.stepGroundRoll(dt);
+        continue;
+      }
+      c.model.step(dt);
+    }
 
     // Guns
     for (const c of this.combatants) {
@@ -1011,8 +1177,9 @@ export class FlightSession {
   }
 
   private groundCheck(c: Combatant): void {
+    if (c === this.player && this.groundRoll) return; // takeoff roll owns the ground
     const pos = c.model.position;
-    const ground = this.env.terrainHeight(pos.x, pos.z);
+    const ground = c === this.player ? this.groundHeightAt(pos.x, pos.z, pos.y) : this.env.terrainHeight(pos.x, pos.z);
     if (pos.y >= ground + 1.5) return;
 
     if (c === this.player) {
@@ -1033,9 +1200,11 @@ export class FlightSession {
           this.playerDown = 'landed';
           pos.y = ground + 1.5;
           c.model.velocity.setScalar(0);
-          this.toast('WHEELS DOWN', 2400);
+          const trap = this.homeDeckY !== null;
+          this.toast(trap ? 'TRAP — GOOD WIRE' : 'WHEELS DOWN', 2400);
           this.hud.showCrash(
-            this.missionState === 'complete' ? '✔ WHEELS DOWN — home safe, press Esc'
+            this.missionState === 'complete'
+              ? (trap ? '✔ GOOD TRAP — welcome aboard, press Esc' : '✔ WHEELS DOWN — home safe, press Esc')
               : this.mission ? 'LANDED — objective incomplete, press Esc'
               : '✔ LANDED — press R to fly again'
           );

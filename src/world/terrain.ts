@@ -78,8 +78,25 @@ function makeCloudTexture(seed: number): THREE.Texture {
   return tex;
 }
 
+/** Where the war happens. Each era owns a set; 'ocean' brings the carrier. */
+export type Theater = 'flanders' | 'coast' | 'desert' | 'arctic' | 'ocean';
+
+export const THEATERS: Record<Era, Theater[]> = {
+  wwi: ['flanders', 'coast'],
+  modern: ['desert', 'arctic', 'ocean']
+};
+
+export function randomTheater(era: Era): Theater {
+  const list = THEATERS[era];
+  return list[Math.floor(Math.random() * list.length)];
+}
+
 export interface EraEnvironment {
+  /** Collision height — never below the water surface where there is one. */
   terrainHeight(x: number, z: number): number;
+  theater: Theater;
+  /** Water surface height, or null on dry theaters. */
+  waterY: number | null;
   group: THREE.Group;
   skyColor: THREE.Color;
   fogColor: THREE.Color;
@@ -89,21 +106,40 @@ export interface EraEnvironment {
 const SIZE = 16000;      // 16 km square
 const SEGMENTS = 220;
 
-export function buildEnvironment(era: Era): EraEnvironment {
+function smooth01(v: number): number {
+  const t = Math.min(Math.max(v, 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+export function buildEnvironment(era: Era, theater?: Theater): EraEnvironment {
+  const th: Theater = theater ?? (era === 'modern' ? 'desert' : 'flanders');
   const group = new THREE.Group();
 
   const heightScale = era === 'modern' ? 900 : 120;
-  const heightFreq = era === 'modern' ? 1 / 4200 : 1 / 1600;
+  const heightFreq = th === 'ocean' ? 1 / 3000 : era === 'modern' ? 1 / 4200 : 1 / 1600;
+  const hasWater = th === 'ocean' || th === 'coast';
 
-  const terrainHeight = (x: number, z: number): number => {
+  /** Raw terrain, allowed below sea level — the mesh shows the seabed. */
+  const rawHeight = (x: number, z: number): number => {
     const base = fbm(x * heightFreq, z * heightFreq, 5);
+    if (th === 'ocean') {
+      // Island chains: most of the map drowned, peaks break the surface.
+      return Math.pow(base, 1.6) * 800 - 300;
+    }
     let h = Math.pow(base, era === 'modern' ? 1.8 : 1.2) * heightScale;
     if (era === 'modern') {
       // Carve canyon floors flat-ish for that Top Gun low-level run.
       h = Math.max(h - 60, 0) * 1.1;
     }
+    if (th === 'coast') {
+      // The land slides into the Channel toward the west.
+      h -= smooth01((-x - 2200) / 2000) * 260;
+    }
     return h;
   };
+
+  const terrainHeight = (x: number, z: number): number =>
+    hasWater ? Math.max(rawHeight(x, z), 0) : rawHeight(x, z);
 
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEGMENTS, SEGMENTS);
   geo.rotateX(-Math.PI / 2);
@@ -113,16 +149,33 @@ export function buildEnvironment(era: Era): EraEnvironment {
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
-    const h = terrainHeight(x, z);
+    const h = rawHeight(x, z);
     pos.setY(i, h);
 
-    const t = h / heightScale;
+    const t = Math.max(h, 0) / heightScale;
     const speckle = hash2(Math.floor(x / 90), Math.floor(z / 90));
-    if (era === 'wwi') {
+    if (h < 0) {
+      // Seabed: sandy shallows shading into deep blue-green.
+      const d = Math.min(-h / 220, 1);
+      c.setRGB(0.55 - d * 0.42, 0.55 - d * 0.34, 0.42 - d * 0.18);
+    } else if (th === 'flanders' || th === 'coast') {
       // Muddy greens & browns; occasional shell-churned field.
       if (speckle > 0.82) c.setRGB(0.32 + t * 0.1, 0.26, 0.16);       // mud
       else c.setRGB(0.24 + t * 0.15, 0.34 + t * 0.12, 0.16);          // field green
       if (speckle < 0.08) c.multiplyScalar(0.8);                       // hedgerow shadow
+      if (th === 'coast' && h < 8) c.setRGB(0.72, 0.66, 0.5);          // beach strip
+    } else if (th === 'arctic') {
+      // Frozen flats, gray rock shoulders, snow ridgelines.
+      if (t < 0.05) c.setRGB(0.8, 0.85, 0.9);
+      else if (t < 0.45) c.setRGB(0.44 + t * 0.2, 0.47 + t * 0.2, 0.52 + t * 0.2);
+      else c.setRGB(0.88, 0.91, 0.96);
+      if (speckle > 0.88) c.multiplyScalar(0.92);
+    } else if (th === 'ocean') {
+      // Islands: sand ring, green interior, gray peaks.
+      if (h < 12) c.setRGB(0.8, 0.72, 0.52);
+      else if (t < 0.3) c.setRGB(0.25 + t * 0.2, 0.45 + t * 0.1, 0.24);
+      else c.setRGB(0.5 + t * 0.2, 0.5 + t * 0.18, 0.46 + t * 0.15);
+      if (speckle > 0.9) c.multiplyScalar(0.9);
     } else {
       // Desert: tan floors, red-rock walls, pale ridgelines.
       if (t < 0.05) c.setRGB(0.78, 0.68, 0.5);
@@ -141,6 +194,21 @@ export function buildEnvironment(era: Era): EraEnvironment {
   );
   terrain.name = 'terrain';
   group.add(terrain);
+
+  // Water surface — oversized so the ocean runs past the terrain edge.
+  if (hasWater) {
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(SIZE * 4, SIZE * 4),
+      new THREE.MeshLambertMaterial({
+        color: th === 'ocean' ? 0x1e5d8e : 0x3d6b74,
+        transparent: true,
+        opacity: 0.88
+      })
+    );
+    water.rotation.x = -Math.PI / 2;
+    water.position.y = 0.2;
+    group.add(water);
+  }
 
   // Lighting
   const sun = new THREE.DirectionalLight(0xffffff, era === 'modern' ? 2.6 : 1.9);
@@ -185,9 +253,22 @@ export function buildEnvironment(era: Era): EraEnvironment {
   );
   group.add(hemi);
 
-  const skyColor = era === 'modern' ? new THREE.Color(0x7ab6e8) : new THREE.Color(0x9fb4bd);
-  const fogColor = era === 'modern' ? new THREE.Color(0xcfd9e2) : new THREE.Color(0xb9c4c2);
-  const fogDensity = era === 'modern' ? 0.000055 : 0.00013; // WWI: closer haze
+  const palettes: Record<Theater, { sky: number; fog: number; density: number }> = {
+    desert: { sky: 0x7ab6e8, fog: 0xcfd9e2, density: 0.000055 },
+    arctic: { sky: 0x9cc4e8, fog: 0xe2eaf2, density: 0.00004 },
+    ocean: { sky: 0x6fb0e8, fog: 0xc4dcec, density: 0.00004 },
+    flanders: { sky: 0x9fb4bd, fog: 0xb9c4c2, density: 0.00013 },
+    coast: { sky: 0x9db6c4, fog: 0xb9c8cc, density: 0.0001 }
+  };
+  const pal = palettes[th];
 
-  return { terrainHeight, group, skyColor, fogColor, fogDensity };
+  return {
+    terrainHeight,
+    theater: th,
+    waterY: hasWater ? 0 : null,
+    group,
+    skyColor: new THREE.Color(pal.sky),
+    fogColor: new THREE.Color(pal.fog),
+    fogDensity: pal.density
+  };
 }

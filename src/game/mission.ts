@@ -7,6 +7,7 @@ import type { Era } from '../engine/flight/aircraft';
 import type { Side, PilotRecord, Dynasty } from '../career/dynasty';
 import { formatDate, wwiFounderAce } from '../career/dynasty';
 import { pickWingman, warStatusLine, type Campaign } from '../career/campaign';
+import type { Theater } from '../world/terrain';
 
 export type MissionType = 'patrol' | 'balloon' | 'escort' | 'intercept' | 'strike';
 
@@ -16,6 +17,8 @@ export interface Mission {
   title: string;
   briefing: string;
   side: Side;
+  /** Landscape this mission is flown over; 'ocean' launches from the carrier. */
+  theater: Theater;
   /** Objective area, world coords relative to spawn at origin. */
   zone: { x: number; z: number };
   enemyCount: number;
@@ -44,6 +47,7 @@ function pick<T>(arr: T[]): T {
 
 function generateWwi(pilot: PilotRecord): Mission {
   const type: MissionType = pick(['patrol', 'patrol', 'balloon', 'escort']);
+  const theater: Theater = pick(['flanders', 'flanders', 'coast']);
   const sector = pick(WWI_SECTORS[pilot.side as 'entente' | 'central'] ?? WWI_SECTORS.entente);
   const date = formatDate(pilot.dateISO);
   const bearing = Math.random() * Math.PI * 2;
@@ -53,7 +57,7 @@ function generateWwi(pilot: PilotRecord): Mission {
 
   if (type === 'balloon') {
     return {
-      era: 'wwi', type, side: pilot.side, zone, enemyCount: 1,
+      era: 'wwi', type, theater, side: pilot.side, zone, enemyCount: 1,
       balloonAltM: 500 + Math.random() * 200,
       title: `Balloon Attack — ${sector}`,
       briefing:
@@ -70,7 +74,7 @@ function generateWwi(pilot: PilotRecord): Mission {
       zone
     ];
     return {
-      era: 'wwi', type, side: pilot.side, zone, enemyCount, route,
+      era: 'wwi', type, theater, side: pilot.side, zone, enemyCount, route,
       title: `Escort Duty — ${sector}`,
       briefing:
         `${date}. A reconnaissance two-seater is photographing the lines near ${sector}. ` +
@@ -80,7 +84,7 @@ function generateWwi(pilot: PilotRecord): Mission {
   }
 
   return {
-    era: 'wwi', type: 'patrol', side: pilot.side, zone, enemyCount,
+    era: 'wwi', type: 'patrol', theater, side: pilot.side, zone, enemyCount,
     title: `Dawn Patrol — ${sector}`,
     briefing:
       `${date}. Offensive patrol over ${sector}. Enemy scouts have been working ` +
@@ -91,6 +95,10 @@ function generateWwi(pilot: PilotRecord): Mission {
 
 function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
   const type: MissionType = pick(['patrol', 'patrol', 'escort', 'intercept', 'strike']);
+  // Ground-objective missions stay over land; CAPs and sweeps can go blue-water.
+  const theater: Theater = type === 'strike' || type === 'intercept'
+    ? pick(['desert', 'arctic'])
+    : pick(['desert', 'arctic', 'ocean']);
   const sector = pick(MODERN_SECTORS);
   const date = formatDate(pilot.dateISO);
   const bearing = Math.random() * Math.PI * 2;
@@ -113,7 +121,7 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
       zone
     ];
     return {
-      era: 'modern', type, side: 'nato', zone, enemyCount, route, heritage,
+      era: 'modern', type, theater, side: 'nato', zone, enemyCount, route, heritage,
       title: `Strike Escort — ${sector}`,
       briefing:
         `${date}. A strike package is going through ${sector} at medium level and ` +
@@ -124,7 +132,7 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
 
   if (type === 'strike') {
     return {
-      era: 'modern', type, side: 'nato', zone, enemyCount: 1, heritage,
+      era: 'modern', type, theater, side: 'nato', zone, enemyCount: 1, heritage,
       title: `Deep Strike — ${sector}`,
       briefing:
         `${date}. A hardened command bunker in ${sector} is coordinating everything ` +
@@ -136,7 +144,7 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
 
   if (type === 'intercept') {
     return {
-      era: 'modern', type, side: 'nato', zone, enemyCount, heritage,
+      era: 'modern', type, theater, side: 'nato', zone, enemyCount, heritage,
       title: `Alert Scramble — ${sector}`,
       briefing:
         `${date}. Hostile aircraft inbound toward the forward base at ${sector}, ` +
@@ -146,7 +154,7 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
   }
 
   return {
-    era: 'modern', type: 'patrol', side: 'nato', zone, enemyCount, heritage,
+    era: 'modern', type: 'patrol', theater, side: 'nato', zone, enemyCount, heritage,
     title: `Combat Air Patrol — ${sector}`,
     briefing:
       `${date}. Establish CAP over ${sector}. Intel says Fulcrums have been probing ` +
@@ -160,6 +168,9 @@ export function generateMission(
   campaign: Campaign | null = null
 ): Mission {
   const m = pilot.era === 'modern' ? generateModern(pilot, dynasty) : generateWwi(pilot);
+  if (m.theater === 'ocean') {
+    m.briefing += ' You launch from the carrier — full burner off the deck, and the wire is waiting when it\'s done.';
+  }
   if (campaign) {
     // The war colors every briefing — and a bad front means more trade.
     m.briefing += ` ${warStatusLine(campaign)}`;
