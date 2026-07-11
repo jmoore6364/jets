@@ -49,6 +49,8 @@ export class TouchControls {
       <button class="tbtn tbrk">BRK</button>
       <button class="tbtn twpn">WPN</button>
       <button class="tbtn tflr">FLR</button>
+      <button class="tbtn tlck">LCK</button>
+      <button class="tbtn twm">WM</button>
       <button class="tbtn tmenu">☰</button>
       <button class="tbtn tcam">CAM</button>`;
     container.appendChild(this.root);
@@ -75,6 +77,14 @@ export class TouchControls {
     q('.tflr').addEventListener('pointerdown', e => {
       e.preventDefault();
       this.input.flareRequested = true;
+    });
+    q('.tlck').addEventListener('pointerdown', e => {
+      e.preventDefault();
+      this.input.lockRequested = true;
+    });
+    q('.twm').addEventListener('pointerdown', e => {
+      e.preventDefault();
+      this.input.wingmanOrderRequested = true;
     });
     q('.tmenu').addEventListener('pointerdown', e => {
       e.preventDefault();

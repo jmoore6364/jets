@@ -13,7 +13,7 @@ import {
 } from '../world/terrain';
 import { EffectsPool } from '../world/effects';
 import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
-import { ProjectileSystem, type HitTarget } from '../engine/combat/projectiles';
+import { ProjectileSystem, type HitTarget, type GunSpec } from '../engine/combat/projectiles';
 import { MissileSystem, SAM, type MissileTargetView, type MissileSpec } from '../engine/combat/missiles';
 import { FlakSystem } from '../engine/combat/flak';
 import { BombSystem, predictImpact } from '../engine/combat/bombs';
@@ -32,6 +32,12 @@ import { dynastyPerks, type DynastyPerks } from '../career/legacyShop';
 import type { Mission } from './mission';
 
 const PHYSICS_DT = 1 / 120;
+
+/** Bomber defensive armament: wide spread, real bite inside 600 m. */
+const TAIL_GUN: GunSpec = {
+  name: 'Tail gun', rateHz: 10, muzzleVelMs: 720, dispersionRad: 0.045,
+  magazine: 100000, damage: 1, effectiveRangeM: 640, tracerColor: 0xffa050, muzzleOffsets: [0]
+};
 const SPAWN_ALT = { wwi: 600, modern: 1500 };
 
 interface Pilot {
@@ -80,15 +86,25 @@ export class FlightSession {
   private wingman2: Combatant | null = null;
   /** Raid bombers this mission — the ones that must not get through. */
   private raidBombers = new Set<Combatant>();
+  private tailGunTimers = new Map<Combatant, number>();
   private escortee: Combatant | null = null;
   private respawnTimers = new Map<Combatant, number>();
   private nextId = 0;
 
   /** Balloon objective (balloon missions). */
   private balloon: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean } | null = null;
-  /** Strike mission objectives. */
-  private bunker: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean } | null = null;
-  private sam: { mesh: THREE.Group; pos: THREE.Vector3; hp: number; alive: boolean; cooldown: number } | null = null;
+  /** Ground objectives: bunkers, SAM sites, convoy trucks, MG posts. */
+  private groundTargets: Array<{
+    id: number;
+    kind: 'bunker' | 'sam' | 'truck' | 'mg';
+    mesh: THREE.Group;
+    pos: THREE.Vector3;
+    hp: number;
+    alive: boolean;
+    cooldown: number;
+    vel?: THREE.Vector3;
+  }> = [];
+  private nextGroundId = 990;
   /** Ground fire over defended territory. */
   private flak: FlakSystem;
   /** The home strip or carrier deck: land here gently for the bonus. */
@@ -317,30 +333,31 @@ export class FlightSession {
     }
 
     if (m.type === 'strike') {
-      // Ground bunker target
-      const bunkerMesh = new THREE.Group();
-      const base = new THREE.Mesh(new THREE.BoxGeometry(14, 5, 14), new THREE.MeshLambertMaterial({ color: 0x777d72, flatShading: true }));
-      base.position.y = 2.5;
-      const top = new THREE.Mesh(new THREE.BoxGeometry(8, 3, 8), new THREE.MeshLambertMaterial({ color: 0x62685e, flatShading: true }));
-      top.position.y = 6.5;
-      bunkerMesh.add(base, top);
-      bunkerMesh.position.set(m.zone.x, groundAtZone, m.zone.z);
-      this.scene.add(bunkerMesh);
-      this.bunker = { mesh: bunkerMesh, pos: bunkerMesh.position.clone().setY(groundAtZone + 4), hp: 10, alive: true };
+      this.addGroundTarget('bunker', m.zone.x, m.zone.z);
+      this.addGroundTarget('sam', m.zone.x + 900, m.zone.z - 700);
+    }
 
-      // SAM site guarding it
-      const samMesh = new THREE.Group();
-      const sBase = new THREE.Mesh(new THREE.BoxGeometry(6, 2.5, 6), new THREE.MeshLambertMaterial({ color: 0x5a6152, flatShading: true }));
-      sBase.position.y = 1.25;
-      const dish = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 0.5, 10), new THREE.MeshLambertMaterial({ color: 0x8a9182, flatShading: true }));
-      dish.rotation.z = Math.PI / 3;
-      dish.position.y = 4;
-      dish.name = 'samDish';
-      samMesh.add(sBase, dish);
-      const sx = m.zone.x + 900, sz = m.zone.z - 700;
-      samMesh.position.set(sx, this.env.terrainHeight(sx, sz), sz);
-      this.scene.add(samMesh);
-      this.sam = { mesh: samMesh, pos: samMesh.position.clone().addScaledVector(new THREE.Vector3(0, 3, 0), 1), hp: 6, alive: true, cooldown: 6 };
+    if (m.type === 'sead') {
+      // A SAM ring: three sites spread around the zone. Kill them all.
+      for (const [ox, oz] of [[0, 0], [1400, -900], [-1100, 1100]]) {
+        this.addGroundTarget('sam', m.zone.x + ox, m.zone.z + oz);
+      }
+    }
+
+    if (m.type === 'convoy') {
+      // Four trucks crawling along a bearing; stop three before they escape the map.
+      const dir = new THREE.Vector3(Math.sin(Math.random() * Math.PI * 2), 0, Math.cos(Math.random() * Math.PI * 2)).normalize();
+      for (let i = 0; i < 4; i++) {
+        const t = this.addGroundTarget('truck', m.zone.x - dir.x * i * 60, m.zone.z - dir.z * i * 60);
+        t.vel = dir.clone().multiplyScalar(8);
+      }
+    }
+
+    if (m.type === 'strafe') {
+      // A machine-gun line dug in along the trenches.
+      for (let i = 0; i < 4; i++) {
+        this.addGroundTarget('mg', m.zone.x + (i - 1.5) * 130, m.zone.z + (i % 2) * 80);
+      }
     }
 
     if (m.type === 'escort' && m.route) {
@@ -353,6 +370,62 @@ export class FlightSession {
       this.pilots.set(f, new RoutePilot(route, modern ? 0.8 : 0.7));
       this.escortee = f;
     }
+  }
+
+  /** Build and register a ground objective at (x, z), sitting on the terrain. */
+  private addGroundTarget(kind: 'bunker' | 'sam' | 'truck' | 'mg', x: number, z: number) {
+    const y = this.env.terrainHeight(x, z);
+    const g = new THREE.Group();
+    const lam = (color: number) => new THREE.MeshLambertMaterial({ color, flatShading: true });
+    let hp = 6, aimY = 3;
+
+    if (kind === 'bunker') {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(14, 5, 14), lam(0x777d72));
+      base.position.y = 2.5;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(8, 3, 8), lam(0x62685e));
+      top.position.y = 6.5;
+      g.add(base, top);
+      hp = 10; aimY = 4;
+    } else if (kind === 'sam') {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(6, 2.5, 6), lam(0x5a6152));
+      base.position.y = 1.25;
+      const dish = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, 0.5, 10), lam(0x8a9182));
+      dish.rotation.z = Math.PI / 3;
+      dish.position.y = 4;
+      dish.name = 'samDish';
+      g.add(base, dish);
+      hp = 6; aimY = 3;
+    } else if (kind === 'truck') {
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 6.5), lam(0x4f5a44));
+      bed.position.y = 1.6;
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 1.8), lam(0x3e4836));
+      cab.position.set(0, 1.3, -4);
+      g.add(bed, cab);
+      hp = 2; aimY = 1.5;
+    } else {
+      // mg post: sandbag ring + gun stub
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 1.2, 8), lam(0x6a5c40));
+      ring.position.y = 0.6;
+      const gun = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 2.4), lam(0x333333));
+      gun.position.set(0, 1.4, -0.8);
+      gun.rotation.x = -0.3;
+      g.add(ring, gun);
+      hp = 3; aimY = 1;
+    }
+
+    g.position.set(x, y, z);
+    this.scene.add(g);
+    const target = {
+      id: this.nextGroundId++,
+      kind,
+      mesh: g,
+      pos: new THREE.Vector3(x, y + aimY, z),
+      hp,
+      alive: true,
+      cooldown: 6 + Math.random() * 4
+    } as FlightSession['groundTargets'][number];
+    this.groundTargets.push(target);
+    return target;
   }
 
   /** Home plate: a land strip, or the carrier when the theater is blue water. */
@@ -551,9 +624,9 @@ export class FlightSession {
           const m = this.mission;
           active = Math.hypot(p.x - m.zone.x, p.z - m.zone.z) < 2600;
         } else {
-          // Modern AAA rings the strike targets.
-          for (const site of [this.sam, this.bunker]) {
-            if (site?.alive && Math.hypot(p.x - site.pos.x, p.z - site.pos.z) < 2400) active = true;
+          // Modern AAA rings every live ground objective.
+          for (const site of this.groundTargets) {
+            if (site.alive && Math.hypot(p.x - site.pos.x, p.z - site.pos.z) < 2400) active = true;
           }
         }
       }
@@ -1110,20 +1183,44 @@ export class FlightSession {
       c.gun.update(dt, firing, c.id, m.position, m.quaternion, m.velocity, this.projectiles);
     }
 
+    // Bomber tail gunners: defensive bursts at anyone closing in.
+    for (const b of this.raidBombers) {
+      if (!b.alive) continue;
+      const t = (this.tailGunTimers.get(b) ?? 0.5) - dt;
+      if (t > 0) { this.tailGunTimers.set(b, t); continue; }
+      let foe: Combatant | null = null;
+      let fd = TAIL_GUN.effectiveRangeM;
+      for (const c of this.combatants) {
+        if (!c.alive || c.side === b.side) continue;
+        if (c === this.player && this.playerDown !== 'flying') continue;
+        const d = c.model.position.distanceTo(b.model.position);
+        if (d < fd) { fd = d; foe = c; }
+      }
+      if (!foe) { this.tailGunTimers.set(b, 0.3); continue; }
+      this.tailGunTimers.set(b, 0.2 + Math.random() * 0.25);
+      const muzzle = b.model.position.clone()
+        .add(new THREE.Vector3(0, 1.5, 7).applyQuaternion(b.model.quaternion));
+      const lead = foe.model.position.clone()
+        .addScaledVector(foe.model.velocity, fd / TAIL_GUN.muzzleVelMs);
+      const aim = lead.sub(muzzle).normalize();
+      this.projectiles.spawn(b.id, TAIL_GUN, muzzle, aim, b.model.velocity);
+    }
+
     // Missiles
     if (this.missileSystem) {
       this.updateAiWeapons(dt);
 
-      // SAM site: tracks and launches at the player inside its ring
-      if (this.sam?.alive && this.playerDown === 'flying') {
-        this.sam.cooldown -= dt;
-        const dish = this.sam.mesh.getObjectByName('samDish');
+      // SAM sites: each tracks and launches at the player inside its ring
+      for (const site of this.groundTargets) {
+        if (site.kind !== 'sam' || !site.alive || this.playerDown !== 'flying') continue;
+        site.cooldown -= dt;
+        const dish = site.mesh.getObjectByName('samDish');
         if (dish) dish.rotation.y += dt * 1.5;
-        const dist = this.sam.pos.distanceTo(this.player.model.position);
-        if (this.sam.cooldown <= 0 && dist < SAM.lockRangeM) {
-          this.sam.cooldown = 13 + Math.random() * 6;
-          const up = this.player.model.position.clone().sub(this.sam.pos).normalize().add(new THREE.Vector3(0, 0.6, 0)).normalize();
-          this.missileSystem.launch(SAM, 998, this.sam.pos.clone().addScaledVector(up, 4), up, new THREE.Vector3(), this.player.id);
+        const dist = site.pos.distanceTo(this.player.model.position);
+        if (site.cooldown <= 0 && dist < SAM.lockRangeM) {
+          site.cooldown = 13 + Math.random() * 6;
+          const up = this.player.model.position.clone().sub(site.pos).normalize().add(new THREE.Vector3(0, 0.6, 0)).normalize();
+          this.missileSystem.launch(SAM, site.id, site.pos.clone().addScaledVector(up, 4), up, new THREE.Vector3(), this.player.id);
           this.audio?.launch();
           this.toast('⚠ SAM LAUNCH', 1600);
         }
@@ -1146,37 +1243,22 @@ export class FlightSession {
         onHit: (d, by) => this.onCombatantHit(c, d, by)
       });
     }
-    if (this.bunker?.alive) {
-      const b = this.bunker;
+    const GT_RADIUS = { bunker: 10, sam: 7, truck: 4, mg: 3.5 } as const;
+    const GT_TOAST = { bunker: 'TARGET DESTROYED', sam: 'SAM DESTROYED', truck: 'TRUCK DESTROYED', mg: 'MG POST SILENCED' } as const;
+    for (const gt of this.groundTargets) {
+      if (!gt.alive) continue;
       targets.push({
-        id: 997, position: b.pos, radiusM: 10,
+        id: gt.id, position: gt.pos, radiusM: GT_RADIUS[gt.kind],
         onHit: d => {
-          b.hp -= d;
-          this.effects.spawn(b.pos.clone(), { size: 4, growth: 6, life: 0.6, color: 0xffcc66, opacity: 0.8 });
-          if (b.hp <= 0 && b.alive) {
-            b.alive = false;
-            this.effects.explosion(b.pos.clone());
-            this.audio?.explosionAt(b.pos.distanceTo(this.player.model.position));
-            b.mesh.visible = false;
-            this.toast('TARGET DESTROYED');
-          }
-        }
-      });
-    }
-    if (this.sam?.alive) {
-      const s = this.sam;
-      targets.push({
-        id: 998, position: s.pos, radiusM: 7,
-        onHit: d => {
-          s.hp -= d;
-          this.effects.spawn(s.pos.clone(), { size: 3, growth: 5, life: 0.5, color: 0xffcc66, opacity: 0.8 });
-          if (s.hp <= 0 && s.alive) {
-            s.alive = false;
-            this.effects.explosion(s.pos.clone());
-            this.audio?.explosionAt(s.pos.distanceTo(this.player.model.position));
-            s.mesh.visible = false;
-            this.kills++;
-            this.toast('SAM DESTROYED');
+          gt.hp -= d;
+          this.effects.spawn(gt.pos.clone(), { size: 3.5, growth: 6, life: 0.6, color: 0xffcc66, opacity: 0.8 });
+          if (gt.hp <= 0 && gt.alive) {
+            gt.alive = false;
+            this.effects.explosion(gt.pos.clone());
+            this.audio?.explosionAt(gt.pos.distanceTo(this.player.model.position));
+            gt.mesh.visible = false;
+            if (gt.kind !== 'bunker') this.kills++;
+            this.toast(GT_TOAST[gt.kind]);
           }
         }
       });
@@ -1198,6 +1280,15 @@ export class FlightSession {
         }
       });
     }
+    // Convoy trucks keep rolling for the map edge.
+    for (const gt of this.groundTargets) {
+      if (gt.kind !== 'truck' || !gt.alive || !gt.vel) continue;
+      gt.pos.addScaledVector(gt.vel, dt);
+      gt.pos.y = this.env.terrainHeight(gt.pos.x, gt.pos.z) + 1.5;
+      gt.mesh.position.set(gt.pos.x, gt.pos.y - 1.5, gt.pos.z);
+      gt.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), gt.vel.clone().normalize());
+    }
+
     this.projectiles.update(dt, targets, this.env.terrainHeight);
     this.bombSystem.update(dt, this.env.terrainHeight, targets,
       pos => this.audio?.explosionAt(pos.distanceTo(this.player.model.position)));
@@ -1337,7 +1428,30 @@ export class FlightSession {
     let complete = false;
     if (m.type === 'patrol') complete = enemiesDown;
     else if (m.type === 'balloon') complete = !!this.balloon && !this.balloon.alive;
-    else if (m.type === 'strike') complete = !!this.bunker && !this.bunker.alive;
+    else if (m.type === 'strike') {
+      const bunker = this.groundTargets.find(g => g.kind === 'bunker');
+      complete = !!bunker && !bunker.alive;
+    }
+    else if (m.type === 'sead') {
+      const sams = this.groundTargets.filter(g => g.kind === 'sam');
+      complete = sams.length > 0 && sams.every(g => !g.alive);
+    }
+    else if (m.type === 'convoy') {
+      const trucks = this.groundTargets.filter(g => g.kind === 'truck');
+      complete = trucks.filter(g => !g.alive).length >= 3;
+      // Trucks that make it 6 km past the zone have escaped.
+      for (const t of trucks) {
+        if (t.alive && Math.hypot(t.pos.x - m.zone.x, t.pos.z - m.zone.z) > 6000 && !complete) {
+          this.missionState = 'failed';
+          this.hud.showCrash('THE CONVOY GOT THROUGH — press Esc');
+          return;
+        }
+      }
+    }
+    else if (m.type === 'strafe') {
+      const posts = this.groundTargets.filter(g => g.kind === 'mg');
+      complete = posts.length > 0 && posts.every(g => !g.alive);
+    }
     else if (m.type === 'intercept') {
       // Any BOMBER reaching the base = mission failed; escorts don't count.
       for (const c of this.raidBombers.size ? this.raidBombers : this.combatants) {
@@ -1466,10 +1580,15 @@ export class FlightSession {
             break;
           }
         }
-        if (!info.rwr && this.sam?.alive &&
-            this.sam.pos.distanceTo(this.player.model.position) < SAM.lockRangeM * 1.2) {
-          const v = this.sam.pos.clone().project(this.camera);
-          info.rwr = { dirX: v.x, dirY: v.y, behind: v.z >= 1 };
+        if (!info.rwr) {
+          for (const site of this.groundTargets) {
+            if (site.kind !== 'sam' || !site.alive) continue;
+            if (site.pos.distanceTo(this.player.model.position) < SAM.lockRangeM * 1.2) {
+              const v = site.pos.clone().project(this.camera);
+              info.rwr = { dirX: v.x, dirY: v.y, behind: v.z >= 1 };
+              break;
+            }
+          }
         }
       }
     }
@@ -1512,8 +1631,11 @@ export class FlightSession {
         this.missionState === 'failed' ? `Mission failed — RTB ${home}` :
         m.type === 'patrol' ? `${modern ? 'CAP' : 'Patrol'}: clear the sector (${hostiles} hostile)` :
         m.type === 'balloon' ? 'Destroy the observation balloon' :
-        m.type === 'strike' ? `Strike: destroy the bunker${this.sam?.alive ? ' (SAM active)' : ''}` :
-        m.type === 'intercept' ? `Intercept: stop the strikers (${hostiles} inbound)` :
+        m.type === 'strike' ? `Strike: destroy the bunker${this.groundTargets.some(g => g.kind === 'sam' && g.alive) ? ' (SAM active)' : ''}` :
+        m.type === 'sead' ? `SEAD: kill the SAM ring (${this.groundTargets.filter(g => g.kind === 'sam' && g.alive).length} up)` :
+        m.type === 'convoy' ? `Convoy: stop the trucks (${this.groundTargets.filter(g => g.kind === 'truck' && g.alive).length} rolling)` :
+        m.type === 'strafe' ? `Silence the machine-gun line (${this.groundTargets.filter(g => g.kind === 'mg' && g.alive).length} firing)` :
+        m.type === 'intercept' ? `Intercept: stop the bombers (${hostiles} inbound)` :
         modern ? 'Protect the strike package' : 'Escort the two-seater';
       info.mission = {
         text: label,

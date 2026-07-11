@@ -134,7 +134,7 @@ describe('the dynasty bridge', () => {
       expect(m.heritage?.name).toBe('Jack Moore');
       expect(Math.hypot(m.zone.x, m.zone.z)).toBeGreaterThan(5000);
     }
-    expect(seen).toEqual(new Set(['patrol', 'escort', 'intercept', 'strike']));
+    expect(seen).toEqual(new Set(['patrol', 'escort', 'intercept', 'strike', 'sead', 'convoy']));
   });
 });
 
@@ -152,7 +152,7 @@ describe('mission generator', () => {
       if (m.type === 'balloon') expect(m.balloonAltM).toBeGreaterThan(300);
       if (m.type === 'escort') expect(m.route!.length).toBeGreaterThanOrEqual(2);
     }
-    expect(seen).toEqual(new Set(['patrol', 'balloon', 'escort', 'intercept']));
+    expect(seen).toEqual(new Set(['patrol', 'balloon', 'escort', 'intercept', 'strafe']));
   });
 
   it('scales opposition with the pilot\'s score', () => {

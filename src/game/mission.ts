@@ -9,7 +9,7 @@ import { formatDate, wwiFounderAce } from '../career/dynasty';
 import { pickWingman, warStatusLine, type Campaign } from '../career/campaign';
 import { randomConditions, type Theater, type Conditions } from '../world/terrain';
 
-export type MissionType = 'patrol' | 'balloon' | 'escort' | 'intercept' | 'strike';
+export type MissionType = 'patrol' | 'balloon' | 'escort' | 'intercept' | 'strike' | 'sead' | 'convoy' | 'strafe';
 
 export interface Mission {
   era: Era;
@@ -50,7 +50,7 @@ function pick<T>(arr: T[]): T {
 }
 
 function generateWwi(pilot: PilotRecord): Mission {
-  const type: MissionType = pick(['patrol', 'patrol', 'balloon', 'escort', 'intercept']);
+  const type: MissionType = pick(['patrol', 'patrol', 'balloon', 'escort', 'intercept', 'strafe']);
   const theater: Theater = pick(['flanders', 'flanders', 'coast']);
   const sector = pick(WWI_SECTORS[pilot.side as 'entente' | 'central'] ?? WWI_SECTORS.entente);
   const date = formatDate(pilot.dateISO);
@@ -68,6 +68,18 @@ function generateWwi(pilot: PilotRecord): Mission {
         `${date}. An enemy observation balloon near ${sector} has been directing ` +
         `artillery onto our trenches all week. Fly to the marked position and burn it down. ` +
         `Expect a defending scout — balloons are never left alone.`
+    };
+  }
+
+  if (type === 'strafe') {
+    return {
+      era: 'wwi', type, theater, side: pilot.side, zone, enemyCount: 1,
+      title: `Trench Strafe — ${sector}`,
+      briefing:
+        `${date}. A machine-gun line near ${sector} has our infantry pinned and the ` +
+        `push stalls tomorrow unless it goes quiet tonight. Four posts, dug in along the ` +
+        `trench. Cooper bombs or guns — come in low along the line, not across it, ` +
+        `and mind the archie.`
     };
   }
 
@@ -110,9 +122,9 @@ function generateWwi(pilot: PilotRecord): Mission {
 }
 
 function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
-  const type: MissionType = pick(['patrol', 'patrol', 'escort', 'intercept', 'strike']);
+  const type: MissionType = pick(['patrol', 'patrol', 'escort', 'intercept', 'strike', 'sead', 'convoy']);
   // Ground-objective missions stay over land; CAPs and sweeps can go blue-water.
-  const theater: Theater = type === 'strike' || type === 'intercept'
+  const theater: Theater = type === 'strike' || type === 'intercept' || type === 'sead' || type === 'convoy'
     ? pick(['desert', 'arctic'])
     : pick(['desert', 'arctic', 'ocean']);
   const sector = pick(MODERN_SECTORS);
@@ -155,6 +167,30 @@ function generateModern(pilot: PilotRecord, dynasty: Dynasty | null): Mission {
         `hostile in this sector, and it is defended: an SA-8 ring sits 900 meters east, ` +
         `and a CAP is up. Kill the radar or stay low and fast; either way the bunker ` +
         `dies today. Guns and missiles both work on soft structures.` + heritageLine
+    };
+  }
+
+  if (type === 'sead') {
+    return {
+      era: 'modern', type, theater, side: 'nato', zone, enemyCount: 1, heritage,
+      title: `SEAD — ${sector}`,
+      briefing:
+        `${date}. Three SA-8 sites went active in ${sector} overnight and the whole ` +
+        `strike schedule is grounded until they're dirt. This is Weasel work: make them ` +
+        `launch, make them miss, kill the radars. Chaff is life. All three sites, no ` +
+        `survivors.` + heritageLine
+    };
+  }
+
+  if (type === 'convoy') {
+    return {
+      era: 'modern', type, theater, side: 'nato', zone, enemyCount: 1, heritage,
+      title: `Convoy Hunt — ${sector}`,
+      briefing:
+        `${date}. A resupply convoy is running the road through ${sector} under AAA ` +
+        `escort — four trucks carrying enough materiel to matter. Stop at least three ` +
+        `before they clear the sector. Bombs work; the gun works; sitting at altitude ` +
+        `does not.` + heritageLine
     };
   }
 
