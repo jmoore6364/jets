@@ -9,7 +9,7 @@ import { ArcadeFlightModel } from '../engine/flight/arcadeModel';
 import type { FlightBody } from '../engine/flight/flightBody';
 import { buildAircraftMesh } from '../world/aircraftMesh';
 import { Gun, WWI_TWIN_MG, M61_VULCAN, type GunSpec } from '../engine/combat/projectiles';
-import { AIM9, R73, AIM120, R77, type MissileSpec } from '../engine/combat/missiles';
+import { AIM9, R73, AIM120, R77, AIM54, type MissileSpec } from '../engine/combat/missiles';
 import type { EffectsPool } from '../world/effects';
 
 export function gunFor(spec: AircraftSpec): GunSpec {
@@ -20,6 +20,36 @@ export function hitPointsFor(spec: AircraftSpec): number {
   if (spec.id === 'gotha') return 24;      // it takes a squadron to bring one down
   if (spec.id === 'backfire') return 16;
   return spec.era === 'wwi' ? 14 : 7;
+}
+
+/** Era-accurate stations, best we can: what each airframe actually carries. */
+export interface Loadout {
+  ir: MissileSpec | null;
+  irCount: number;
+  bvr: MissileSpec | null;
+  bvrCount: number;
+  bombs: number;
+  decoys: number;
+}
+
+export const LOADOUTS: Record<string, Loadout> = {
+  // 2× wingtip Sidewinders + 2 more on 3/7, 2 AMRAAM, the do-it-all jet.
+  f16: { ir: AIM9, irCount: 4, bvr: AIM120, bvrCount: 2, bombs: 4, decoys: 30 },
+  // The bomb truck: fewer heaters, more AMRAAM, six Mk-82s.
+  fa18: { ir: AIM9, irCount: 2, bvr: AIM120, bvrCount: 4, bombs: 6, decoys: 30 },
+  // Internal bays: 2 '9s and SIX '120s. Two small-diameter bombs.
+  f22: { ir: AIM9, irCount: 2, bvr: AIM120, bvrCount: 6, bombs: 2, decoys: 24 },
+  // The fleet-defense load: four Phoenix on the tunnel, four Sidewinders.
+  f14: { ir: AIM9, irCount: 4, bvr: AIM54, bvrCount: 4, bombs: 4, decoys: 30 },
+  mig29: { ir: R73, irCount: 4, bvr: R77, bvrCount: 2, bombs: 0, decoys: 30 },
+  backfire: { ir: null, irCount: 0, bvr: null, bvrCount: 0, bombs: 0, decoys: 30 }
+};
+
+function loadoutFor(spec: AircraftSpec): Loadout {
+  const l = LOADOUTS[spec.id];
+  if (l) return l;
+  // WWI: guns and a rack of Cooper bombs.
+  return { ir: null, irCount: 0, bvr: null, bvrCount: 0, bombs: 4, decoys: 0 };
 }
 
 export class Combatant {
@@ -64,10 +94,13 @@ export class Combatant {
     this.gun = new Gun(gunFor(spec));
     this.maxHp = hitPointsFor(spec);
     this.hp = this.maxHp;
-    // Fighters carry missiles; bombers just fly and bleed.
-    const fighter = spec.era === 'modern' && spec.id !== 'backfire';
-    this.missileSpec = fighter ? (spec.id === 'mig29' ? R73 : AIM9) : null;
-    this.bvrSpec = fighter ? (spec.id === 'mig29' ? R77 : AIM120) : null;
+    const loadout = loadoutFor(spec);
+    this.missileSpec = loadout.ir;
+    this.bvrSpec = loadout.bvr;
+    this.missileCap = loadout.irCount;
+    this.bvrCap = loadout.bvrCount;
+    this.bombCap = loadout.bombs;
+    this.decoyCap = loadout.decoys;
     this.rearm();
   }
 
@@ -81,13 +114,14 @@ export class Combatant {
     }
   }
 
-  /** Apply dynasty legacy perks (player only). Re-arms with the new caps. */
-  applyPerks(p: { hpMult: number; missileCap: number; bvrCap: number; decoyCap: number }): void {
+  /** Apply dynasty legacy perks (player only) on top of the airframe's
+   *  own stations. Re-arms with the new caps. Call once. */
+  applyPerks(p: { hpMult: number; missileBonus: number; bvrBonus: number; decoyBonus: number }): void {
     this.maxHp = Math.round(hitPointsFor(this.spec) * p.hpMult);
     this.hp = this.maxHp;
-    this.missileCap = p.missileCap;
-    this.bvrCap = p.bvrCap;
-    this.decoyCap = p.decoyCap;
+    if (this.missileSpec) this.missileCap += p.missileBonus;
+    if (this.bvrSpec) this.bvrCap += p.bvrBonus;
+    if (this.decoyCap > 0) this.decoyCap += p.decoyBonus;
     this.rearm();
   }
 

@@ -32,10 +32,33 @@ interface ArcadeTuning {
 }
 
 function tuningFor(spec: AircraftSpec): ArcadeTuning {
-  if (spec.era === 'modern') {
-    return { pitchRate: 1.15, rollRate: 3.1, yawRate: 0.45, gMax: 9, vMax: 290, vMaxAb: 390, vCorner: 130, vMin: 75 };
-  }
-  return { pitchRate: 0.95, rollRate: 2.0, yawRate: 0.5, gMax: 4.5, vMax: spec.cruiseSpeedMs * 1.25, vMaxAb: spec.cruiseSpeedMs * 1.25, vCorner: 30, vMin: 17 };
+  const base: ArcadeTuning = spec.era === 'modern'
+    ? { pitchRate: 1.15, rollRate: 3.1, yawRate: 0.45, gMax: 9, vMax: 290, vMaxAb: 390, vCorner: 130, vMin: 75 }
+    : { pitchRate: 0.95, rollRate: 2.0, yawRate: 0.5, gMax: 4.5, vMax: spec.cruiseSpeedMs * 1.25, vMaxAb: spec.cruiseSpeedMs * 1.25, vCorner: 30, vMin: 17 };
+
+  // Airframe character, arcade edition. Same contract, different numbers.
+  const perAirframe: Record<string, Partial<ArcadeTuning>> = {
+    // The Viper owns the roll axis. This is the baseline everything is judged by.
+    f16: { rollRate: 3.4 },
+    // Hornet: slow-speed nose authority, softer G, less top end.
+    fa18: { pitchRate: 1.3, rollRate: 2.7, gMax: 7.5, vMax: 265, vMaxAb: 350, vCorner: 110, vMin: 66 },
+    // Raptor: brutal speed and climb; heavy in roll next to the Viper.
+    f22: { pitchRate: 1.2, rollRate: 2.4, vMax: 330, vMaxAb: 470, vCorner: 150, vMin: 80 },
+    // Tomcat: heavy fleet iron — fast, stable, mushy up close.
+    f14: { pitchRate: 0.9, rollRate: 2.1, gMax: 7.5, vMax: 305, vMaxAb: 430, vCorner: 145, vMin: 85 },
+    // Camel: the turn-fighter. Dr.I: even snappier nose, slower everywhere.
+    'sopwith-camel': { rollRate: 2.4, pitchRate: 1.05 },
+    'fokker-dr1': { pitchRate: 1.12, rollRate: 2.2, vMax: spec.cruiseSpeedMs * 1.18 },
+    // SPAD: an anvil with an engine — fast, stiff, strong in the dive.
+    spad13: { rollRate: 1.7, gMax: 5, vMax: spec.cruiseSpeedMs * 1.35, vCorner: 36 },
+    // D.VII: hangs on its prop where everything else falls off.
+    'fokker-d7': { pitchRate: 1.05, vMin: 14, vCorner: 26 },
+    // S.E.5a: fast, steady, deliberate.
+    se5a: { rollRate: 1.8, vMax: spec.cruiseSpeedMs * 1.32, vCorner: 34 },
+    // Albatros: quick and slippery, average stick.
+    albatros: { rollRate: 1.9, vMax: spec.cruiseSpeedMs * 1.3 }
+  };
+  return { ...base, ...perAirframe[spec.id] };
 }
 
 const _v = new THREE.Vector3();

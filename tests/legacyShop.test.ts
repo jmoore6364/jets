@@ -48,7 +48,7 @@ describe('legacy shop', () => {
 
   it('derives perk modifiers from owned unlocks', () => {
     const base = dynastyPerks(null);
-    expect(base).toEqual({ hpMult: 1, gunRegenMult: 1, missileCap: 4, bvrCap: 2, decoyCap: 30 });
+    expect(base).toEqual({ hpMult: 1, gunRegenMult: 1, missileBonus: 0, bvrBonus: 0, decoyBonus: 0 });
 
     const d = richDynasty(1000);
     for (const u of LEGACY_UNLOCKS) expect(buyUnlock(d, u.id)).toBe(true);
@@ -57,8 +57,19 @@ describe('legacy shop', () => {
     const perks = dynastyPerks(d);
     expect(perks.hpMult).toBeGreaterThan(1);
     expect(perks.gunRegenMult).toBeGreaterThan(1);
-    expect(perks.missileCap).toBe(6);
-    expect(perks.bvrCap).toBe(3);
-    expect(perks.decoyCap).toBe(45);
+    expect(perks.missileBonus).toBe(2);
+    expect(perks.bvrBonus).toBe(1);
+    expect(perks.decoyBonus).toBe(15);
+  });
+});
+
+describe('aircraft loadouts', () => {
+  it('gives each airframe its own stations', async () => {
+    const { LOADOUTS } = await import('../src/game/combatant');
+    expect(LOADOUTS.f22.bvrCount).toBe(6);      // internal bays full of AMRAAM
+    expect(LOADOUTS.f14.bvr!.name).toBe('AIM-54');
+    expect(LOADOUTS.f14.bvr!.lockRangeM).toBeGreaterThan(20000);
+    expect(LOADOUTS.fa18.bombs).toBeGreaterThan(LOADOUTS.f16.bombs);
+    expect(LOADOUTS.backfire.ir).toBeNull();    // bombers don't shoot back (missiles, anyway)
   });
 });

@@ -35,7 +35,7 @@ export const LEGACY_UNLOCKS: LegacyUnlock[] = [
   {
     id: 'rails',
     name: 'Extra Rails',
-    desc: 'Carry 6 IR missiles and 3 radar missiles. Somebody signed for the extra pylons; nobody asks who.',
+    desc: '+2 IR missiles and +1 radar missile over any airframe\'s standard load. Somebody signed for the extra pylons; nobody asks who.',
     cost: 60,
     era: 'modern'
   },
@@ -56,8 +56,29 @@ export const LEGACY_UNLOCKS: LegacyUnlock[] = [
   {
     id: 'fa18',
     name: 'F/A-18C Hornet',
-    desc: "A second modern mount: slower than the Viper, but it turns like a knife fight and holds alpha the Viper's limiter won't allow.",
+    desc: "A second modern mount: slower than the Viper, but it turns like a knife fight and holds alpha the Viper's limiter won't allow. Six-bomb rack.",
     cost: 120,
+    era: 'modern'
+  },
+  {
+    id: 'aces-birds',
+    name: 'The Aces\' Mounts',
+    desc: 'The S.E.5a (fast, steady, forgiving) and the Albatros D.Va (the Jastas\' plywood shark) join the stable.',
+    cost: 80,
+    era: 'wwi'
+  },
+  {
+    id: 'f14',
+    name: 'F-14B Tomcat',
+    desc: 'The fleet interceptor: heavy and mushy up close, but four AIM-54 Phoenix kill from 24 km — twice any other missile.',
+    cost: 150,
+    era: 'modern'
+  },
+  {
+    id: 'f22',
+    name: 'F-22A Raptor',
+    desc: 'Speed, altitude, six internal AMRAAMs, and a radar return the size of a bird — enemies engage you at half range. The Viper still out-rolls it.',
+    cost: 200,
     era: 'modern'
   }
 ];
@@ -85,21 +106,22 @@ export function buyUnlock(d: Dynasty, id: string): boolean {
   return true;
 }
 
-/** Concrete gameplay modifiers derived from owned unlocks. */
+/** Concrete gameplay modifiers derived from owned unlocks. Weapon perks
+ * are ADDITIVE on top of each airframe's own stations. */
 export interface DynastyPerks {
   hpMult: number;
   gunRegenMult: number;
-  missileCap: number;
-  bvrCap: number;
-  decoyCap: number;
+  missileBonus: number;
+  bvrBonus: number;
+  decoyBonus: number;
 }
 
 export function dynastyPerks(d: Dynasty | null): DynastyPerks {
   return {
     hpMult: hasUnlock(d, 'airframe') ? 1.3 : 1,
     gunRegenMult: hasUnlock(d, 'armorer') ? 1.6 : 1,
-    missileCap: hasUnlock(d, 'rails') ? 6 : 4,
-    bvrCap: hasUnlock(d, 'rails') ? 3 : 2,
-    decoyCap: hasUnlock(d, 'dispensers') ? 45 : 30
+    missileBonus: hasUnlock(d, 'rails') ? 2 : 0,
+    bvrBonus: hasUnlock(d, 'rails') ? 1 : 0,
+    decoyBonus: hasUnlock(d, 'dispensers') ? 15 : 0
   };
 }

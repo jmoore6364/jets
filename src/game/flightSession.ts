@@ -61,7 +61,7 @@ export interface SessionResult {
   landed: boolean;
 }
 
-const WWI_CENTRAL_IDS = ['fokker-dr1', 'fokker-d7'];
+const WWI_CENTRAL_IDS = ['fokker-dr1', 'fokker-d7', 'albatros'];
 
 function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
   if (player.era === 'modern') return MIG29;
@@ -533,7 +533,11 @@ export class FlightSession {
   // ---------------- Takeoff ----------------
 
   private rotateSpeed(): number {
-    return this.player.spec.era === 'modern' ? 72 : this.player.spec.cruiseSpeedMs * 0.75;
+    const id = this.player.spec.id;
+    if (this.player.spec.era === 'modern') {
+      return id === 'f14' || id === 'f22' ? 86 : 72; // the heavies fly later
+    }
+    return this.player.spec.cruiseSpeedMs * 0.75;
   }
 
   /** Park on the strip (or the cat) and hand the throttle to the pilot. */
@@ -1044,7 +1048,7 @@ export class FlightSession {
     }
 
     // Maintain / drop the lock (radar shots hold lock much farther out)
-    const lockRange = this.selectedWeapon === 'bvr' ? 16000 : 9000;
+    const lockRange = this.selectedWeapon === 'bvr' ? (this.player.bvrSpec?.lockRangeM ?? 16000) * 1.05 : 9000;
     if (this.lockedTarget && (!this.lockedTarget.alive || !this.inSeekerEnvelope(this.lockedTarget, 1.0, lockRange))) {
       this.lockedTarget = null;
     }
@@ -1121,7 +1125,9 @@ export class FlightSession {
         const dist = to.length();
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(c.model.quaternion);
         const angle = Math.acos(THREE.MathUtils.clamp(to.normalize().dot(fwd), -1, 1));
-        const bvrShot = c.bvrSpec && c.bvrMissiles > 0 && dist > 4500 && dist < 9500 && angle < 0.25;
+        // Stealth: the Raptor's return shrinks everyone's engagement basket.
+        const stealth = target === this.player && this.player.spec.id === 'f22' ? 0.55 : 1;
+        const bvrShot = c.bvrSpec && c.bvrMissiles > 0 && dist > 4500 * stealth && dist < 9500 * stealth && angle < 0.25;
         const irShot = dist > 1200 && dist < 5500 && angle < 0.35 && c.missiles > 0;
         if (bvrShot || irShot) {
           const spec = bvrShot ? c.bvrSpec! : c.missileSpec;
@@ -1217,7 +1223,8 @@ export class FlightSession {
         const dish = site.mesh.getObjectByName('samDish');
         if (dish) dish.rotation.y += dt * 1.5;
         const dist = site.pos.distanceTo(this.player.model.position);
-        if (site.cooldown <= 0 && dist < SAM.lockRangeM) {
+        const samStealth = this.player.spec.id === 'f22' ? 0.55 : 1;
+        if (site.cooldown <= 0 && dist < SAM.lockRangeM * samStealth) {
           site.cooldown = 13 + Math.random() * 6;
           const up = this.player.model.position.clone().sub(site.pos).normalize().add(new THREE.Vector3(0, 0.6, 0)).normalize();
           this.missileSystem.launch(SAM, site.id, site.pos.clone().addScaledVector(up, 4), up, new THREE.Vector3(), this.player.id);

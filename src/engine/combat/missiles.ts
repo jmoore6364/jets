@@ -47,6 +47,12 @@ export const R77: MissileSpec = {
   seekerConeRad: 1.0, lockRangeM: 13000, proxFuseM: 12, damage: 6, flareResistance: 0.55
 };
 
+/** The Tomcat's arm: nothing else reaches this far, nothing else turns worse. */
+export const AIM54: MissileSpec = {
+  name: 'AIM-54', seeker: 'radar', accelMs2: 320, burnS: 8.0, maxSpeedMs: 1400, turnG: 18,
+  seekerConeRad: 1.0, lockRangeM: 24000, proxFuseM: 14, damage: 8, flareResistance: 0.7
+};
+
 export const SAM: MissileSpec = {
   name: 'SA-8', seeker: 'radar', accelMs2: 260, burnS: 7.0, maxSpeedMs: 950, turnG: 22,
   seekerConeRad: 1.2, lockRangeM: 8000, proxFuseM: 15, damage: 6, flareResistance: 0.5

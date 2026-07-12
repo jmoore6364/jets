@@ -138,6 +138,74 @@ export const FOKKER_D7: AircraftSpec = {
   cruiseSpeedMs: 46
 };
 
+/** Legacy-shop unlock: the S.E.5a — fast, honest, and a rock-steady gun
+ * platform. Less agile than the Camel; far less likely to kill you. */
+export const SE5A: AircraftSpec = {
+  id: 'se5a',
+  name: 'S.E.5a',
+  era: 'wwi',
+  massKg: 880,
+  inertia: { pitch: 2500, yaw: 3600, roll: 2100 },
+  wingAreaM2: 22.7,
+  wingSpanM: 8.1,
+  chordM: 2.5,
+  aspectRatio: 3.24,
+  oswald: 0.73,
+  cl0: 0.14,
+  clAlpha: 4.3,
+  clMax: 1.4,
+  alphaStallRad: 0.27,
+  cd0: 0.041,
+  cmDe: 0.15,
+  clDa: 0.05,
+  cnDr: 0.07,
+  adverseYaw: 0.011,
+  cmAlpha: -0.34, // famously stable
+  cm0: 0.012,
+  cnBeta: 0.11,
+  dihedralEffect: 0.05,
+  pitchDamp: 8.5,
+  rollDamp: 0.55,
+  yawDamp: 0.36,
+  engineAngularMomentum: 240, // geared Hispano V8
+  propulsion: { kind: 'prop', maxPowerW: 149000, propEfficiency: 0.76, maxStaticThrustN: 3200 },
+  cruiseSpeedMs: 49
+};
+
+/** Legacy-shop unlock: the Albatros D.Va — the sleek plywood shark most of
+ * the Jastas flew. Fast in a dive, decent everywhere, spectacular nowhere. */
+export const ALBATROS: AircraftSpec = {
+  id: 'albatros',
+  name: 'Albatros D.Va',
+  era: 'wwi',
+  massKg: 730,
+  inertia: { pitch: 2100, yaw: 3100, roll: 1800 },
+  wingAreaM2: 21.2,
+  wingSpanM: 9.0,
+  chordM: 2.4,
+  aspectRatio: 3.75,
+  oswald: 0.73,
+  cl0: 0.15,
+  clAlpha: 4.3,
+  clMax: 1.45,
+  alphaStallRad: 0.28,
+  cd0: 0.042,
+  cmDe: 0.15,
+  clDa: 0.05,
+  cnDr: 0.07,
+  adverseYaw: 0.013,
+  cmAlpha: -0.28,
+  cm0: 0.012,
+  cnBeta: 0.10,
+  dihedralEffect: 0.05,
+  pitchDamp: 8,
+  rollDamp: 0.53,
+  yawDamp: 0.34,
+  engineAngularMomentum: 320, // inline Mercedes
+  propulsion: { kind: 'prop', maxPowerW: 134000, propEfficiency: 0.75, maxStaticThrustN: 3000 },
+  cruiseSpeedMs: 47
+};
+
 /** AI only: the raid bomber. Huge, slow, and it soaks up punishment. */
 export const GOTHA: AircraftSpec = {
   id: 'gotha',
@@ -171,4 +239,4 @@ export const GOTHA: AircraftSpec = {
   cruiseSpeedMs: 32
 };
 
-export const WWI_AIRCRAFT = [FOKKER_DR1, SOPWITH_CAMEL, SPAD13, FOKKER_D7];
+export const WWI_AIRCRAFT = [FOKKER_DR1, SOPWITH_CAMEL, SPAD13, FOKKER_D7, SE5A, ALBATROS];

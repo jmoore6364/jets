@@ -46,9 +46,16 @@ function buildWwi(spec: AircraftSpec): THREE.Group {
   const isDr1 = spec.id === 'fokker-dr1';
   const isSpad = spec.id === 'spad13';
   const isD7 = spec.id === 'fokker-d7';
-  const paint = isDr1 ? 0xb02020 : isSpad ? 0xb09a62 : isD7 ? 0x55684e : 0x9a8449;
+  const isSe5 = spec.id === 'se5a';
+  const isAlb = spec.id === 'albatros';
+  const paint = isDr1 ? 0xb02020
+    : isSpad ? 0xb09a62
+    : isD7 ? 0x55684e
+    : isSe5 ? 0x6b6b44          // PC10 khaki-green
+    : isAlb ? 0x9c8454          // varnished plywood
+    : 0x9a8449;
   const wingCount = isDr1 ? 3 : 2;
-  const entente = spec.id === 'sopwith-camel' || isSpad;
+  const entente = spec.id === 'sopwith-camel' || isSpad || isSe5;
   const span = spec.wingSpanM;
 
   // Fuselage: nose box + tapering rear
@@ -103,7 +110,7 @@ function buildWwi(spec: AircraftSpec): THREE.Group {
   g.add(fin);
 
   // Nose: round rotary cowl, or a flat radiator for the inline-engined birds
-  const cowl = isSpad || isD7
+  const cowl = isSpad || isD7 || isSe5 || isAlb
     ? new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.9, 0.6), mat(0x6e6e72))
     : new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.52, 0.7, 12), mat(0x6e6e72));
   cowl.rotation.x = Math.PI / 2;
@@ -140,8 +147,10 @@ function buildModern(spec: AircraftSpec): THREE.Group {
   const g = new THREE.Group();
   const mig = spec.id === 'mig29';
   const hornet = spec.id === 'fa18';
-  const skin = mig ? 0x5d6b75 : hornet ? 0x9aa4ad : 0x8b95a1;
-  const dark = mig ? 0x46525b : hornet ? 0x7f8992 : 0x77808c;
+  const raptor = spec.id === 'f22';
+  const tomcat = spec.id === 'f14';
+  const skin = mig ? 0x5d6b75 : hornet ? 0x9aa4ad : raptor ? 0x737e87 : tomcat ? 0x8e97a2 : 0x8b95a1;
+  const dark = mig ? 0x46525b : hornet ? 0x7f8992 : raptor ? 0x5e6871 : tomcat ? 0x767f8a : 0x77808c;
 
   // Fuselage: tapered central body
   const bodyGeo = new THREE.CylinderGeometry(0.62, 0.55, 9.6, 10);
@@ -165,9 +174,9 @@ function buildModern(spec: AircraftSpec): THREE.Group {
   canopy.position.set(0, 0.55, -2.9);
   g.add(canopy);
 
-  if (mig || hornet) {
+  if (mig || hornet || raptor || tomcat) {
     // Twin engine nacelles (shoulder-mounted on the MiG, tucked on the Hornet)
-    for (const sx of mig ? [-0.75, 0.75] : [-0.58, 0.58]) {
+    for (const sx of mig ? [-0.75, 0.75] : tomcat ? [-0.85, 0.85] : [-0.58, 0.58]) {
       const nacGeo = new THREE.CylinderGeometry(mig ? 0.42 : 0.38, mig ? 0.4 : 0.36, 6.2, 8);
       nacGeo.rotateX(Math.PI / 2);
       const nac = new THREE.Mesh(nacGeo, mat(dark));
@@ -218,9 +227,17 @@ function buildModern(spec: AircraftSpec): THREE.Group {
     g.add(makeFin(-0.75, 0.16), makeFin(0.75, -0.16));
   } else if (hornet) {
     g.add(makeFin(-0.62, 0.35), makeFin(0.62, -0.35)); // the Hornet's hard cant
+  } else if (raptor) {
+    g.add(makeFin(-0.7, 0.42), makeFin(0.7, -0.42));   // big canted slabs
+  } else if (tomcat) {
+    g.add(makeFin(-0.85, 0.06), makeFin(0.85, -0.06)); // near-vertical twins
   } else {
     g.add(makeFin(0, 0));
   }
+
+  // Heavier iron reads bigger on screen.
+  if (raptor) g.scale.setScalar(1.15);
+  if (tomcat) g.scale.setScalar(1.3);
 
   // Afterburner flame
   const ab = new THREE.Mesh(

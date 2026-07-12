@@ -76,6 +76,48 @@ export const MIG29: AircraftSpec = {
   cruiseSpeedMs: 175
 };
 
+/** Legacy-shop unlock: speed, altitude, and six AMRAAMs nobody sees coming.
+ * The F-16 will out-roll it in a phone booth — the Raptor's fight is BVR. */
+export const F22: AircraftSpec = {
+  ...F16,
+  id: 'f22',
+  name: 'F-22A Raptor',
+  massKg: 19700,
+  inertia: { pitch: 165000, yaw: 190000, roll: 38000 },
+  wingAreaM2: 78,
+  wingSpanM: 13.6,
+  chordM: 5.1,
+  aspectRatio: 2.36,
+  cd0: 0.015,
+  clMax: 1.7,
+  alphaStallRad: 0.6,
+  fbw: { alphaLimitRad: 0.6, gLimit: 9 }, // TVC-fed alpha authority
+  brakeDrag: 0.05,
+  propulsion: { kind: 'jet', milThrustN: 232000, abThrustN: 312000 }, // supercruise thrust
+  cruiseSpeedMs: 220
+};
+
+/** Legacy-shop unlock: the fleet interceptor. Heavy, fast, and it kills
+ * from 24 km with the Phoenix — just don't try to knife-fight in it. */
+export const F14: AircraftSpec = {
+  ...F16,
+  id: 'f14',
+  name: 'F-14B Tomcat',
+  massKg: 27700,
+  inertia: { pitch: 310000, yaw: 360000, roll: 82000 },
+  wingAreaM2: 94,
+  wingSpanM: 19.5,
+  chordM: 4.9,
+  aspectRatio: 4.05,
+  cd0: 0.021,
+  clMax: 1.5,
+  alphaStallRad: 0.42,
+  fbw: { alphaLimitRad: 0.38, gLimit: 7.5 },
+  brakeDrag: 0.06,
+  propulsion: { kind: 'jet', milThrustN: 130000, abThrustN: 214000 },
+  cruiseSpeedMs: 210
+};
+
 /** AI only: the raid bomber — fast in a straight line, helpless in a turn. */
 export const BACKFIRE: AircraftSpec = {
   ...F16,
@@ -96,4 +138,4 @@ export const BACKFIRE: AircraftSpec = {
   cruiseSpeedMs: 235
 };
 
-export const MODERN_AIRCRAFT = [F16, FA18];
+export const MODERN_AIRCRAFT = [F16, FA18, F14, F22];
