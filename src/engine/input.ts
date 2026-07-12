@@ -40,6 +40,8 @@ export class InputManager {
 
   /** One-shot events consumed by the session. */
   cameraToggleRequested = false;
+  /** Held: eyes on the bandit (padlock view). */
+  padlock = false;
   respawnRequested = false;
   menuRequested = false;
   weaponToggleRequested = false;
@@ -54,6 +56,7 @@ export class InputManager {
     if (e.repeat) return;
     this.keys.add(e.code);
     if (e.code === 'KeyC') this.cameraToggleRequested = true;
+    if (e.code === 'KeyL') this.padlock = true;
     if (e.code === 'KeyR') this.respawnRequested = true;
     if (e.code === 'Escape') this.menuRequested = true;
     if (e.code === 'KeyM') this.mouseFly = !this.mouseFly;
@@ -74,6 +77,7 @@ export class InputManager {
 
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
+    if (e.code === 'KeyL') this.padlock = false;
   };
 
   private onMouseMove = (e: MouseEvent) => {

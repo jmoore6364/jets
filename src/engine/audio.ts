@@ -22,6 +22,8 @@ interface AudioState {
   gunRateHz: number;
   growl: 'off' | 'seek' | 'lock';
   inbound: boolean;
+  /** Combat proximity 0..1 — drives the score's tension layer. */
+  combat: number;
 }
 
 export class AudioEngine {
@@ -44,6 +46,12 @@ export class AudioEngine {
   private growlGain: GainNode | null = null;
   private warnGain: GainNode | null = null;
   private gunTimer = 0;
+  // score
+  private padOscs: OscillatorNode[] = [];
+  private padGain: GainNode | null = null;
+  private tensionGain: GainNode | null = null;
+  private chordTimer = 0;
+  private chordIdx = 0;
 
   constructor() {
     const kick = () => this.ensure();
@@ -132,6 +140,33 @@ export class AudioEngine {
     this.growlOsc.connect(this.growlGain).connect(this.master!);
     this.growlOsc.start(); this.growlLfo.start();
 
+    // Score: a soft pad (three slow triangles through a lowpass) that
+    // steps through a small chord book, plus a pulsing tension layer that
+    // swells when the fight gets close.
+    const padFilter = ctx.createBiquadFilter();
+    padFilter.type = 'lowpass';
+    padFilter.frequency.value = 750;
+    this.padGain = ctx.createGain();
+    this.padGain.gain.value = 0;
+    padFilter.connect(this.padGain).connect(this.master!);
+    for (let i = 0; i < 3; i++) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = [110, 165, 220][i];
+      o.connect(padFilter);
+      o.start();
+      this.padOscs.push(o);
+    }
+    const tenOsc = ctx.createOscillator(); tenOsc.type = 'square'; tenOsc.frequency.value = 55;
+    const tenGate = ctx.createOscillator(); tenGate.type = 'square'; tenGate.frequency.value = 2.4;
+    const tenGateGain = ctx.createGain(); tenGateGain.gain.value = 0.5;
+    const tenLevel = ctx.createGain(); tenLevel.gain.value = 0;
+    tenGate.connect(tenGateGain).connect(tenLevel.gain);
+    this.tensionGain = ctx.createGain();
+    this.tensionGain.gain.value = 0;
+    tenOsc.connect(tenLevel).connect(this.tensionGain).connect(this.master!);
+    tenOsc.start(); tenGate.start();
+
     // Missile warning beeper
     const warnOsc = ctx.createOscillator(); warnOsc.type = 'square'; warnOsc.frequency.value = 1350;
     const gate = ctx.createOscillator(); gate.type = 'square'; gate.frequency.value = 7;
@@ -181,6 +216,20 @@ export class AudioEngine {
     }
 
     ramp(this.warnGain!.gain, s.inbound ? 0.06 : 0);
+
+    // Score: chords step slowly; combat proximity swells the pulse.
+    this.chordTimer -= dt;
+    if (this.chordTimer <= 0) {
+      this.chordTimer = 8 + Math.random() * 4;
+      this.chordIdx++;
+      const book = s.era === 'wwi'
+        ? [[110, 165, 220], [98, 147, 196], [87.3, 130.8, 174.6], [104, 156, 196]]
+        : [[82.4, 123.5, 164.8], [73.4, 110, 146.8], [65.4, 98, 130.8], [92.5, 138.6, 185]];
+      const chord = book[this.chordIdx % book.length];
+      this.padOscs.forEach((o, i) => o.frequency.setTargetAtTime(chord[i], t, 1.2));
+    }
+    ramp(this.padGain!.gain, (s.era === 'wwi' ? 0.024 : 0.03) + s.combat * 0.014);
+    ramp(this.tensionGain!.gain, s.combat * 0.05);
 
     // Gun bursts while the trigger is down
     this.gunTimer -= dt;
@@ -244,6 +293,48 @@ export class AudioEngine {
     src.connect(f).connect(g).connect(this.master!);
     src.start(t, Math.random());
     src.stop(t + 1.2);
+  }
+
+  /** Radio squelch: the click-hiss before a transmission. */
+  radioSquelch(): void {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const src = this.noiseSource();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 1900;
+    f.Q.value = 1.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.09, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    src.connect(f).connect(g).connect(this.master!);
+    src.start(t, Math.random());
+    src.stop(t + 0.09);
+  }
+
+  /** Short melodic stings for the moments that deserve one. */
+  sting(kind: 'victory' | 'defeat' | 'ace'): void {
+    if (!this.ensure()) return;
+    const ctx = this.ctx!;
+    const t0 = ctx.currentTime;
+    const notes = kind === 'victory' ? [523.3, 659.3, 784, 1046.5]
+      : kind === 'ace' ? [587.3, 880, 1174.7]
+      : [392, 349.2, 311.1, 261.6];
+    const step = kind === 'defeat' ? 0.22 : 0.12;
+    notes.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      const t = t0 + i * step;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      o.connect(g).connect(this.master!);
+      o.start(t);
+      o.stop(t + 0.55);
+    });
   }
 
   /** Rounds striking your airframe: sharp thud. */

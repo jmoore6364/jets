@@ -16,6 +16,7 @@ import { createHud, type CockpitHud, type CombatInfo } from '../ui/hud';
 import { ProjectileSystem, type HitTarget, type GunSpec } from '../engine/combat/projectiles';
 import { MissileSystem, SAM, type MissileTargetView, type MissileSpec } from '../engine/combat/missiles';
 import { FlakSystem } from '../engine/combat/flak';
+import { WingTrails, trailActive } from '../world/trails';
 import { BombSystem, predictImpact } from '../engine/combat/bombs';
 import { AiPilot, RoutePilot, StrikerPilot, WingmanPilot } from '../engine/ai/pilot';
 import { FlightModel } from '../engine/flight/flightModel';
@@ -26,6 +27,7 @@ import { TouchControls, isTouchDevice } from '../ui/touch';
 import { viewportSize } from '../engine/viewport';
 import type { AudioEngine } from '../engine/audio';
 import { getHandling } from './handling';
+import { getSkirmishOptions } from './skirmish';
 import { difficultyParams } from './difficulty';
 import { loadDynasty } from '../career/dynasty';
 import { dynastyPerks, type DynastyPerks } from '../career/legacyShop';
@@ -78,6 +80,11 @@ function enemyPoolFor(player: AircraftSpec): AircraftSpec[] {
 }
 
 function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
+  if (player.era === 'modern') {
+    const foe = getSkirmishOptions().foe;
+    if (foe === 'mig29') return MIG29;
+    if (foe === 'su27') return SU27;
+  }
   return pickEnemy(enemyPoolFor(player));
 }
 
@@ -90,9 +97,12 @@ export class FlightSession {
 
   private combatants: Combatant[] = [];
   private pilots = new Map<Combatant, Pilot>();
+  private trails = new Map<Combatant, WingTrails>();
   private player: Combatant;
   private wingman: Combatant | null = null;
   private wingman2: Combatant | null = null;
+  private wingman3: Combatant | null = null;
+  private furball = false;
   /** Raid bombers this mission — the ones that must not get through. */
   private raidBombers = new Set<Combatant>();
   private tailGunTimers = new Map<Combatant, number>();
@@ -137,7 +147,8 @@ export class FlightSession {
   private touch: TouchControls | null = null;
 
   private accumulator = 0;
-  private cameraMode: 'chase' | 'cockpit' = 'cockpit';
+  private cameraMode: 'chase' | 'cockpit' | 'flyby' = 'cockpit';
+  private flybyPos = new THREE.Vector3();
   /** Black box: last ~30s of flight data, dumped with K for bug reports. */
   private blackBox: object[] = [];
   private blackBoxTimer = 0;
@@ -241,8 +252,10 @@ export class FlightSession {
       this.missionState = 'running';
       this.setupMission(mission);
     } else {
-      this.spawnSkirmishBandit();
-      this.spawnSkirmishBandit();
+      const opts = getSkirmishOptions();
+      this.furball = opts.count >= 4;
+      for (let i = 0; i < opts.count; i++) this.spawnSkirmishBandit();
+      if (this.furball) this.spawnWingman(); // second pass fills the extra slots
     }
 
     try {
@@ -264,6 +277,11 @@ export class FlightSession {
     // FCS pilot assists are for human hands only — they fight AI controllers.
     if (!isPlayer && c.model instanceof FlightModel) c.model.assists = false;
     this.combatants.push(c);
+    this.trails.set(c, new WingTrails(
+      this.scene,
+      spec.era === 'modern' ? 0xf2f6fa : 0xe8e0c8,
+      spec.era === 'modern' ? 0.34 : 0.28
+    ));
     return c;
   }
 
@@ -683,6 +701,7 @@ export class FlightSession {
     if (c !== this.aceCombatant || this.aceKilled || !this.mission?.ace) return;
     this.aceKilled = true;
     this.toast(`★ ${this.mission.ace.name.toUpperCase()} GOES DOWN ★`, 3600);
+    this.audio?.sting('ace');
   }
 
   /** The ace wears his colors: all-red in 1917, red fins in 2026. */
@@ -714,17 +733,35 @@ export class FlightSession {
     const off = new THREE.Vector3(70, 12, 90).applyQuaternion(this.player.model.quaternion);
     this.wingman.respawn(p.x + off.x, Math.max(p.y + off.y, this.env.terrainHeight(p.x + off.x, p.z + off.z) + 200),
       p.z + off.z, spec.cruiseSpeedMs * 1.1, this.player.model.sample.headingRad);
+    this.resetTrail(this.wingman);
 
     // A healthy squadron sends a second man — left side of the formation.
-    if (this.mission?.wingman2) {
+    if (this.mission?.wingman2 || this.furball) {
       if (!this.wingman2) {
         this.wingman2 = this.addCombatant(spec, 0);
-        this.pilots.set(this.wingman2, new WingmanPilot(gunFor(spec), this.player.model, this.mission.wingman2.skill, -1));
+        this.pilots.set(this.wingman2, new WingmanPilot(gunFor(spec), this.player.model, this.mission?.wingman2?.skill ?? 0.7, -1));
       }
       const off2 = new THREE.Vector3(-70, 12, 90).applyQuaternion(this.player.model.quaternion);
       this.wingman2.respawn(p.x + off2.x, Math.max(p.y + off2.y, this.env.terrainHeight(p.x + off2.x, p.z + off2.z) + 220),
         p.z + off2.z, spec.cruiseSpeedMs * 1.1, this.player.model.sample.headingRad);
+      this.resetTrail(this.wingman2);
     }
+
+    // The furball fills a third slot, trailing right.
+    if (this.furball) {
+      if (!this.wingman3) {
+        this.wingman3 = this.addCombatant(spec, 0);
+        this.pilots.set(this.wingman3, new WingmanPilot(gunFor(spec), this.player.model, 0.7, 1));
+      }
+      const off3 = new THREE.Vector3(130, 24, 170).applyQuaternion(this.player.model.quaternion);
+      this.wingman3.respawn(p.x + off3.x, Math.max(p.y + off3.y, this.env.terrainHeight(p.x + off3.x, p.z + off3.z) + 240),
+        p.z + off3.z, spec.cruiseSpeedMs * 1.1, this.player.model.sample.headingRad);
+      this.resetTrail(this.wingman3);
+    }
+  }
+
+  private resetTrail(c: Combatant): void {
+    this.trails.get(c)?.reset(c.model, c.spec.wingSpanM / 2);
   }
 
   private spawnSkirmishBandit(existing?: Combatant): void {
@@ -741,6 +778,7 @@ export class FlightSession {
     const z = p.z - Math.cos(bearing) * dist;
     const alt = Math.max(p.y + (Math.random() - 0.3) * 400, this.env.terrainHeight(x, z) + 400);
     bandit.respawn(x, alt, z, spec.cruiseSpeedMs, Math.random() * Math.PI * 2);
+    this.resetTrail(bandit);
     this.applyDifficulty(bandit);
   }
 
@@ -786,7 +824,7 @@ export class FlightSession {
     }
     if (this.input.cameraToggleRequested) {
       this.input.cameraToggleRequested = false;
-      this.cameraMode = this.cameraMode === 'chase' ? 'cockpit' : 'chase';
+      this.cameraMode = this.cameraMode === 'cockpit' ? 'chase' : this.cameraMode === 'chase' ? 'flyby' : 'cockpit';
     }
     if (this.input.respawnRequested) {
       this.input.respawnRequested = false;
@@ -847,10 +885,11 @@ export class FlightSession {
     if (!this.mission) {
       for (const c of this.combatants) {
         if (c === this.player || c.alive) { this.respawnTimers.delete(c); continue; }
-        const t = (this.respawnTimers.get(c) ?? (c === this.wingman ? 15 : 7)) - dt;
+        const friendly = c === this.wingman || c === this.wingman2 || c === this.wingman3;
+        const t = (this.respawnTimers.get(c) ?? (friendly ? 15 : 7)) - dt;
         if (t <= 0) {
           this.respawnTimers.delete(c);
-          if (c === this.wingman) this.spawnWingman();
+          if (friendly) this.spawnWingman();
           else this.spawnSkirmishBandit(c);
         } else {
           this.respawnTimers.set(c, t);
@@ -860,9 +899,14 @@ export class FlightSession {
 
     this.updateFlak(dt);
     this.updateRadio(dt);
+    const stateBefore = this.missionState;
     this.evaluateMission();
+    if (stateBefore === 'running' && this.missionState === 'failed') this.audio?.sting('defeat');
 
     for (const c of this.combatants) c.updateEffects(dt);
+    for (const [c, tr] of this.trails) {
+      tr.update(dt, c.model, c.spec.wingSpanM / 2, c.alive && trailActive(c.model) && !this.groundRoll);
+    }
     this.effects.update(dt);
 
     // Visual sync
@@ -883,6 +927,25 @@ export class FlightSession {
         flash.visible = firing && Math.random() > 0.35;
         if (flash.visible) flash.scale.setScalar(1.2 + Math.random() * 1.2);
       }
+
+      // Tomcat swing wings follow airspeed
+      if (c.spec.id === 'f14') {
+        const sweep = THREE.MathUtils.clamp((c.model.sample.speedMs - 130) / 170, 0, 1) * 0.55;
+        const L = c.mesh.getObjectByName('swingL');
+        const R = c.mesh.getObjectByName('swingR');
+        if (L) L.rotation.y = sweep;
+        if (R) R.rotation.y = -sweep;
+      }
+    }
+
+    // Player gear: out for the roll, the pattern, and the deck.
+    {
+      const gear = this.player.mesh.getObjectByName('gear');
+      if (gear) {
+        const agl = this.player.model.position.y - this.env.terrainHeight(this.player.model.position.x, this.player.model.position.z);
+        gear.visible = this.groundRoll || this.playerDown === 'landed'
+          || (agl < 250 && this.player.model.sample.speedMs < 130);
+      }
     }
 
     this.updateCamera(dt);
@@ -901,7 +964,13 @@ export class FlightSession {
         growl: this.player.missileSpec && this.selectedWeapon === 'msl'
           ? (this.lockedTarget ? 'lock' : 'seek')
           : 'off',
-        inbound: !!this.missileSystem?.inboundFor(this.player.id)
+        inbound: !!this.missileSystem?.inboundFor(this.player.id),
+        combat: (() => {
+          const near = this.pickTarget(this.player);
+          if (!near || this.playerDown !== 'flying') return 0;
+          const d = near.model.position.distanceTo(this.player.model.position);
+          return THREE.MathUtils.clamp(1 - d / 4500, 0, 1);
+        })()
       });
     }
 
@@ -1523,6 +1592,7 @@ export class FlightSession {
       if (!this.completeAnnounced) {
         this.completeAnnounced = true;
         this.hud.showCrash('✔ MISSION COMPLETE — press Esc to return');
+        this.audio?.sting('victory');
       }
     }
   }
@@ -1716,6 +1786,7 @@ export class FlightSession {
       this.radioBox.className = `radio-box ${this.player.spec.era}`;
       document.getElementById('ui')?.appendChild(this.radioBox);
     }
+    this.audio?.radioSquelch();
     const line = document.createElement('div');
     line.className = 'radio-line';
     line.textContent = text;
@@ -1808,8 +1879,37 @@ export class FlightSession {
     }
     const model = this.player.model;
     const q = model.quaternion;
+    if (this.cameraMode === 'flyby') {
+      // A camera standing in the sky ahead; the aircraft screams past it.
+      this.player.mesh.visible = true;
+      const toCam = this.flybyPos.clone().sub(model.position);
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+      const ahead = -toCam.dot(fwd);
+      if (this.flybyPos.lengthSq() === 0 || ahead < -240 || ahead > 950 || toCam.length() > 1300) {
+        const dir = model.velocity.lengthSq() > 1 ? model.velocity.clone().normalize() : fwd;
+        this.flybyPos.copy(model.position)
+          .addScaledVector(dir, 430)
+          .add(new THREE.Vector3((Math.random() - 0.5) * 180, 18 + Math.random() * 45, (Math.random() - 0.5) * 180));
+        this.flybyPos.y = Math.max(this.flybyPos.y, this.env.terrainHeight(this.flybyPos.x, this.flybyPos.z) + 10);
+      }
+      this.camera.position.copy(this.flybyPos);
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(model.position);
+      return;
+    }
     if (this.cameraMode === 'cockpit') {
       const eye = new THREE.Vector3(0, 0.65, -0.8).applyQuaternion(q).add(model.position);
+      // Padlock: hold L to keep eyes on the bandit through the canopy.
+      if (this.input.padlock) {
+        const tgt = this.lockedTarget?.alive ? this.lockedTarget : this.pickTarget(this.player);
+        if (tgt) {
+          this.camera.position.copy(eye);
+          this.camera.up.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(q));
+          this.camera.lookAt(tgt.model.position);
+          this.player.mesh.visible = false;
+          return;
+        }
+      }
       this.camera.position.copy(eye);
       this.camera.quaternion.copy(q);
       this.player.mesh.visible = false;
@@ -1836,6 +1936,7 @@ export class FlightSession {
     this.missileSystem?.dispose();
     this.bombSystem.dispose();
     this.radioBox?.remove();
+    for (const tr of this.trails.values()) tr.dispose();
     this.projectiles.dispose();
     this.effects.dispose();
     for (const c of this.combatants) c.dispose();

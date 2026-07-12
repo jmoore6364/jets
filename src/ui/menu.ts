@@ -8,6 +8,7 @@ import { MODERN_AIRCRAFT } from '../era/modern/aircraft';
 import { isTouchDevice } from './touch';
 import { getHandling, setHandling } from '../game/handling';
 import { getDifficulty, setDifficulty, type Difficulty } from '../game/difficulty';
+import { getSkirmishOptions, setSkirmishOptions } from '../game/skirmish';
 import { UNLOCK_FOR } from '../game/mount';
 import { loadDynasty } from '../career/dynasty';
 import { hasUnlock } from '../career/legacyShop';
@@ -36,6 +37,8 @@ export class MainMenu {
       <div class="settings-row">
         <button class="handling-btn"></button>
         <button class="handling-btn difficulty-btn"></button>
+        <button class="handling-btn skirmish-count-btn"></button>
+        <button class="handling-btn skirmish-foe-btn"></button>
       </div>
       <p class="controls-hint">${isTouchDevice()
         ? 'Right thumb: stick · Left edge: throttle · FIRE / AB / BRK buttons · ☰ menu · a bandit patrols each map'
@@ -91,6 +94,27 @@ export class MainMenu {
       const order: Difficulty[] = ['rookie', 'pilot', 'ace'];
       setDifficulty(order[(order.indexOf(getDifficulty()) + 1) % order.length]);
       renderDiff();
+    });
+
+    const countBtn = this.root.querySelector('.skirmish-count-btn') as HTMLButtonElement;
+    const foeBtn = this.root.querySelector('.skirmish-foe-btn') as HTMLButtonElement;
+    const renderSkirmish = () => {
+      const o = getSkirmishOptions();
+      countBtn.innerHTML = `SKIRMISH: <b>${o.count === 1 ? '1v1' : o.count === 2 ? '2v2' : '4v4 FURBALL'}</b> <small>(click to change)</small>`;
+      foeBtn.innerHTML = `FOES: <b>${o.foe === 'mixed' ? 'MIXED' : o.foe === 'mig29' ? 'FULCRUMS' : 'FLANKERS'}</b> <small>(modern skirmish)</small>`;
+    };
+    renderSkirmish();
+    countBtn.addEventListener('click', () => {
+      const o = getSkirmishOptions();
+      o.count = o.count === 1 ? 2 : o.count === 2 ? 4 : 1;
+      setSkirmishOptions(o);
+      renderSkirmish();
+    });
+    foeBtn.addEventListener('click', () => {
+      const o = getSkirmishOptions();
+      o.foe = o.foe === 'mixed' ? 'mig29' : o.foe === 'mig29' ? 'su27' : 'mixed';
+      setSkirmishOptions(o);
+      renderSkirmish();
     });
 
     container.appendChild(this.root);

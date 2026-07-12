@@ -193,10 +193,22 @@ function buildModern(spec: AircraftSpec): THREE.Group {
     g.add(intake);
   }
 
-  // Main wing
-  const wing = sweptWing(9.6, 0.16, 3.6, 0.55, skin);
-  wing.position.set(0, -0.08, 0.6);
-  g.add(wing);
+  // Main wing (the Tomcat's swings on pivots, driven by airspeed)
+  if (tomcat) {
+    for (const side of [-1, 1]) {
+      const half = sweptWing(9.0, 0.16, 3.1, 0.4, skin);
+      half.position.x = side * 4.2;
+      const pivot = new THREE.Group();
+      pivot.name = side < 0 ? 'swingL' : 'swingR';
+      pivot.add(half);
+      pivot.position.set(side * 0.9, -0.05, 0.9);
+      g.add(pivot);
+    }
+  } else {
+    const wing = sweptWing(9.6, 0.16, 3.6, 0.55, skin);
+    wing.position.set(0, -0.08, 0.6);
+    g.add(wing);
+  }
 
   // Wingtip missiles
   for (const sx of [-4.7, 4.7]) {
@@ -251,6 +263,22 @@ function buildModern(spec: AircraftSpec): THREE.Group {
   ab.visible = false;
   ab.name = 'abFlame';
   g.add(ab);
+
+  // Landing gear: nose strut + mains, tucked away until needed
+  const gear = new THREE.Group();
+  gear.name = 'gear';
+  const makeStrut = (x: number, z: number) => {
+    const leg = box(0.1, 1.0, 0.1, 0x8a8f96);
+    leg.position.set(x, -1.0, z);
+    const wheel = box(0.22, 0.5, 0.5, 0x1c1c1c);
+    wheel.position.set(x, -1.55, z);
+    gear.add(leg, wheel);
+  };
+  makeStrut(0, -3.4);
+  makeStrut(-1.15, 1.3);
+  makeStrut(1.15, 1.3);
+  gear.visible = false;
+  g.add(gear);
 
   const flash = muzzleFlash();
   flash.position.set(-0.45, 0.1, -4.6); // port-side cannon, like the real Viper
