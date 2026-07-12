@@ -20,8 +20,8 @@ import { BombSystem, predictImpact } from '../engine/combat/bombs';
 import { AiPilot, RoutePilot, StrikerPilot, WingmanPilot } from '../engine/ai/pilot';
 import { FlightModel } from '../engine/flight/flightModel';
 import { Combatant, gunFor } from './combatant';
-import { FOKKER_DR1, SOPWITH_CAMEL, GOTHA } from '../era/wwi/aircraft';
-import { MIG29, BACKFIRE } from '../era/modern/aircraft';
+import { FOKKER_DR1, SOPWITH_CAMEL, SPAD13, FOKKER_D7, SE5A, ALBATROS, GOTHA } from '../era/wwi/aircraft';
+import { MIG29, SU27, BACKFIRE } from '../era/modern/aircraft';
 import { TouchControls, isTouchDevice } from '../ui/touch';
 import { viewportSize } from '../engine/viewport';
 import type { AudioEngine } from '../engine/audio';
@@ -63,13 +63,22 @@ export interface SessionResult {
 
 const WWI_CENTRAL_IDS = ['fokker-dr1', 'fokker-d7', 'albatros'];
 
-function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
-  if (player.era === 'modern') return MIG29;
-  return wwiEnemyOf(player);
+/** Enemy pools: what the other side actually flies against you. */
+const MODERN_ENEMY_POOL = [MIG29, MIG29, SU27];
+const WWI_CENTRAL_POOL = [ALBATROS, ALBATROS, FOKKER_DR1, FOKKER_D7];
+const WWI_ENTENTE_POOL = [SOPWITH_CAMEL, SE5A, SPAD13];
+
+function pickEnemy(pool: AircraftSpec[]): AircraftSpec {
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
-function wwiEnemyOf(player: AircraftSpec): AircraftSpec {
-  return WWI_CENTRAL_IDS.includes(player.id) ? SOPWITH_CAMEL : FOKKER_DR1;
+function enemyPoolFor(player: AircraftSpec): AircraftSpec[] {
+  if (player.era === 'modern') return MODERN_ENEMY_POOL;
+  return WWI_CENTRAL_IDS.includes(player.id) ? WWI_ENTENTE_POOL : WWI_CENTRAL_POOL;
+}
+
+function skirmishBanditFor(player: AircraftSpec): AircraftSpec {
+  return pickEnemy(enemyPoolFor(player));
 }
 
 export class FlightSession {
@@ -87,6 +96,14 @@ export class FlightSession {
   /** Raid bombers this mission — the ones that must not get through. */
   private raidBombers = new Set<Combatant>();
   private tailGunTimers = new Map<Combatant, number>();
+  /** Radio chatter state. */
+  private radioBox: HTMLElement | null = null;
+  private vectorTimer = 14;
+  private wingmanEngaged = new Map<Combatant, boolean>();
+  private radioCooldown = 0;
+  private prevInbound = false;
+  /** Kill cam: slow-mo orbit of the victim. */
+  private killCam: { victim: Combatant; t: number } | null = null;
   private escortee: Combatant | null = null;
   private respawnTimers = new Map<Combatant, number>();
   private nextId = 0;
@@ -262,7 +279,7 @@ export class FlightSession {
 
   private setupMission(m: Mission): void {
     const modern = this.player.spec.era === 'modern';
-    const enemySpec = modern ? MIG29 : wwiEnemyOf(this.player.spec);
+    const enemyPool = enemyPoolFor(this.player.spec);
     const groundAtZone = this.env.terrainHeight(m.zone.x, m.zone.z);
     const zonePos = new THREE.Vector3(m.zone.x, groundAtZone, m.zone.z);
     const cruiseAlt = modern ? 1500 : 500;
@@ -289,21 +306,23 @@ export class FlightSession {
         this.raidBombers.add(b);
       }
       for (let i = 0; i < m.enemyCount; i++) {
-        const e = this.addCombatant(enemySpec, 1);
+        const spec = pickEnemy(enemyPool);
+        const e = this.addCombatant(spec, 1);
         const sx = m.zone.x + away.x * (spawnDist + 700) + (Math.random() - 0.5) * 1800;
         const sz = m.zone.z + away.z * (spawnDist + 700) + (Math.random() - 0.5) * 1800;
         e.respawn(sx, this.env.terrainHeight(sx, sz) + (modern ? 1300 : 900), sz,
-          enemySpec.cruiseSpeedMs, 0);
-        this.pilots.set(e, new AiPilot(gunFor(enemySpec), difficultyParams().skill + Math.random() * 0.1));
+          spec.cruiseSpeedMs, 0);
+        this.pilots.set(e, new AiPilot(gunFor(spec), difficultyParams().skill + Math.random() * 0.1));
         this.applyDifficulty(e);
       }
     } else {
       for (let i = 0; i < m.enemyCount; i++) {
-        const e = this.addCombatant(enemySpec, 1);
+        const spec = pickEnemy(enemyPool);
+        const e = this.addCombatant(spec, 1);
         const ox = (Math.random() - 0.5) * 800, oz = (Math.random() - 0.5) * 800;
         e.respawn(m.zone.x + ox, groundAtZone + cruiseAlt + Math.random() * 300, m.zone.z + oz,
-          enemySpec.cruiseSpeedMs, Math.random() * Math.PI * 2);
-        this.pilots.set(e, new AiPilot(gunFor(enemySpec), difficultyParams().skill + Math.random() * 0.1));
+          spec.cruiseSpeedMs, Math.random() * Math.PI * 2);
+        this.pilots.set(e, new AiPilot(gunFor(spec), difficultyParams().skill + Math.random() * 0.1));
         this.applyDifficulty(e);
       }
     }
@@ -805,6 +824,13 @@ export class FlightSession {
       return true;
     }
     this.recordBlackBox(dt);
+    // Kill cam: the world slows while the camera orbits the victim.
+    if (this.killCam) {
+      this.killCam.t -= dt;
+      if (this.killCam.t <= 0) this.killCam = null;
+      else dt *= 0.35;
+    }
+
     this.updateArcadeResupply(dt);
     this.handleWeaponInputs(dt);
 
@@ -833,6 +859,7 @@ export class FlightSession {
     }
 
     this.updateFlak(dt);
+    this.updateRadio(dt);
     this.evaluateMission();
 
     for (const c of this.combatants) c.updateEffects(dt);
@@ -1327,6 +1354,7 @@ export class FlightSession {
       if (!this.player.alive && this.playerDown === 'flying') {
         this.playerDown = 'shot-down';
         this.hud.showCrash(this.mission ? '✝ SHOT DOWN — press Esc' : '✝ SHOT DOWN — press R');
+        this.startKillCam(this.player);
       }
       return;
     }
@@ -1334,6 +1362,11 @@ export class FlightSession {
       if (c.lastHitBy === this.player.id) {
         this.kills++;
         this.announceKill();
+        this.startKillCam(c);
+        if (this.wingman?.alive && Math.random() < 0.45) {
+          const who = this.mission?.wingman?.name ?? (this.player.spec.era === 'wwi' ? 'Wingman' : 'Two');
+          this.radio(this.player.spec.era === 'wwi' ? `${who}: Oh, well done!` : `${who}: good kill, good kill.`);
+        }
       } else if (this.wingman && c.lastHitBy === this.wingman.id) {
         this.wingmanKills++;
         const wm = this.mission?.wingman?.name;
@@ -1676,7 +1709,103 @@ export class FlightSession {
     return info;
   }
 
+  /** A line of chatter: stacked, era-styled, self-fading. */
+  private radio(text: string): void {
+    if (!this.radioBox) {
+      this.radioBox = document.createElement('div');
+      this.radioBox.className = `radio-box ${this.player.spec.era}`;
+      document.getElementById('ui')?.appendChild(this.radioBox);
+    }
+    const line = document.createElement('div');
+    line.className = 'radio-line';
+    line.textContent = text;
+    this.radioBox.appendChild(line);
+    while (this.radioBox.children.length > 3) this.radioBox.firstChild?.remove();
+    setTimeout(() => {
+      line.classList.add('fade');
+      setTimeout(() => line.remove(), 900);
+    }, 4500);
+  }
+
+  private clockOf(target: Combatant): string {
+    const p = this.player.model;
+    const to = target.model.position.clone().sub(p.position);
+    let rel = Math.atan2(to.x, -to.z) - p.sample.headingRad;
+    while (rel > Math.PI) rel -= 2 * Math.PI;
+    while (rel < -Math.PI) rel += 2 * Math.PI;
+    const clock = ((Math.round(rel / (Math.PI / 6)) + 12) - 1 + 12) % 12 + 1;
+    return `${clock} o'clock`;
+  }
+
+  private updateRadio(dt: number): void {
+    if (this.playerDown !== 'flying') return;
+    this.radioCooldown -= dt;
+    const wwi = this.player.spec.era === 'wwi';
+
+    // Wingman engage calls, by name
+    for (const [wm, name] of [
+      [this.wingman, this.mission?.wingman?.name],
+      [this.wingman2, this.mission?.wingman2?.name]
+    ] as Array<[Combatant | null, string | undefined]>) {
+      if (!wm?.alive) continue;
+      const tgt = this.pickTarget(wm);
+      const engaged = !!tgt && tgt.model.position.distanceTo(wm.model.position) < 2600;
+      const was = this.wingmanEngaged.get(wm) ?? false;
+      if (engaged && !was && this.radioCooldown <= 0 && tgt) {
+        this.radioCooldown = 6;
+        const who = name ?? (wwi ? 'Wingman' : 'Two');
+        this.radio(wwi
+          ? `${who}: Tally-ho! Going in — ${this.clockOf(tgt)}.`
+          : `${who}: engaged, bandit ${this.clockOf(tgt)}.`);
+      }
+      this.wingmanEngaged.set(wm, engaged);
+    }
+
+    // Break call when a missile goes live on the player
+    const inbound = !!this.missileSystem?.inboundFor(this.player.id);
+    if (inbound && !this.prevInbound) {
+      const who = this.wingman?.alive ? this.mission?.wingman?.name : null;
+      this.radio(who ? `${who}: BREAK — missile inbound!` : 'RWR: MISSILE — defend!');
+    }
+    this.prevInbound = inbound;
+
+    // Periodic vectors while hostiles live
+    this.vectorTimer -= dt;
+    if (this.vectorTimer <= 0) {
+      this.vectorTimer = 24 + Math.random() * 10;
+      const nearest = this.pickTarget(this.player);
+      if (nearest) {
+        const p = this.player.model.position;
+        const to = nearest.model.position.clone().sub(p);
+        const brg = String(Math.round((((Math.atan2(to.x, -to.z) * 180 / Math.PI) % 360) + 360) % 360)).padStart(3, '0');
+        const distKm = to.length() / 1000;
+        if (wwi) {
+          const high = nearest.model.position.y > p.y + 150 ? ', above you' : nearest.model.position.y < p.y - 150 ? ', below' : '';
+          this.radio(`Flight: enemy machines about, ${this.clockOf(nearest)}${high}.`);
+        } else {
+          this.radio(`OVERLORD: bandits bearing ${brg}, ${(distKm * 0.539957).toFixed(0)} miles.`);
+        }
+      }
+    }
+  }
+
+  private startKillCam(victim: Combatant): void {
+    if (this.killCam || this.mission?.type === 'balloon') return;
+    this.killCam = { victim, t: 2.4 };
+  }
+
   private updateCamera(dt: number): void {
+    // Kill cam: orbit the falling victim, then snap back.
+    if (this.killCam) {
+      const v = this.killCam.victim.model.position;
+      const ang = performance.now() * 0.0005;
+      const r = Math.max(this.killCam.victim.spec.wingSpanM * 3.2, 34);
+      this.camera.position.set(v.x + Math.cos(ang) * r, v.y + r * 0.35, v.z + Math.sin(ang) * r);
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(v.x, v.y, v.z);
+      this.player.mesh.visible = true;
+      return;
+    }
     const model = this.player.model;
     const q = model.quaternion;
     if (this.cameraMode === 'cockpit') {
@@ -1706,6 +1835,7 @@ export class FlightSession {
     this.hud.dispose();
     this.missileSystem?.dispose();
     this.bombSystem.dispose();
+    this.radioBox?.remove();
     this.projectiles.dispose();
     this.effects.dispose();
     for (const c of this.combatants) c.dispose();

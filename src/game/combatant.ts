@@ -19,6 +19,7 @@ export function gunFor(spec: AircraftSpec): GunSpec {
 export function hitPointsFor(spec: AircraftSpec): number {
   if (spec.id === 'gotha') return 24;      // it takes a squadron to bring one down
   if (spec.id === 'backfire') return 16;
+  if (spec.id === 'su27') return 9;        // big airframe, soaks a little more
   return spec.era === 'wwi' ? 14 : 7;
 }
 
@@ -42,6 +43,7 @@ export const LOADOUTS: Record<string, Loadout> = {
   // The fleet-defense load: four Phoenix on the tunnel, four Sidewinders.
   f14: { ir: AIM9, irCount: 4, bvr: AIM54, bvrCount: 4, bombs: 4, decoys: 30 },
   mig29: { ir: R73, irCount: 4, bvr: R77, bvrCount: 2, bombs: 0, decoys: 30 },
+  su27: { ir: R73, irCount: 6, bvr: R77, bvrCount: 4, bombs: 0, decoys: 40 },
   backfire: { ir: null, irCount: 0, bvr: null, bvrCount: 0, bombs: 0, decoys: 30 }
 };
 

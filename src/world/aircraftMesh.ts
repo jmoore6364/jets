@@ -145,12 +145,13 @@ function buildWwi(spec: AircraftSpec): THREE.Group {
 
 function buildModern(spec: AircraftSpec): THREE.Group {
   const g = new THREE.Group();
-  const mig = spec.id === 'mig29';
+  const mig = spec.id === 'mig29' || spec.id === 'su27';
+  const flanker = spec.id === 'su27';
   const hornet = spec.id === 'fa18';
   const raptor = spec.id === 'f22';
   const tomcat = spec.id === 'f14';
-  const skin = mig ? 0x5d6b75 : hornet ? 0x9aa4ad : raptor ? 0x737e87 : tomcat ? 0x8e97a2 : 0x8b95a1;
-  const dark = mig ? 0x46525b : hornet ? 0x7f8992 : raptor ? 0x5e6871 : tomcat ? 0x767f8a : 0x77808c;
+  const skin = flanker ? 0x7d94ad : mig ? 0x5d6b75 : hornet ? 0x9aa4ad : raptor ? 0x737e87 : tomcat ? 0x8e97a2 : 0x8b95a1;
+  const dark = flanker ? 0x5f7690 : mig ? 0x46525b : hornet ? 0x7f8992 : raptor ? 0x5e6871 : tomcat ? 0x767f8a : 0x77808c;
 
   // Fuselage: tapered central body
   const bodyGeo = new THREE.CylinderGeometry(0.62, 0.55, 9.6, 10);
@@ -238,6 +239,7 @@ function buildModern(spec: AircraftSpec): THREE.Group {
   // Heavier iron reads bigger on screen.
   if (raptor) g.scale.setScalar(1.15);
   if (tomcat) g.scale.setScalar(1.3);
+  if (flanker) g.scale.setScalar(1.2);
 
   // Afterburner flame
   const ab = new THREE.Mesh(

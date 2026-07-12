@@ -14,6 +14,7 @@ import {
 import { LEGACY_UNLOCKS, availableLegacy, buyUnlock, hasUnlock } from '../career/legacyShop';
 import { getCampaign, applyCampaignOutcome, warStatusLine, type Campaign } from '../career/campaign';
 import { availableMounts, selectedMount, setMount } from '../game/mount';
+import { exportSave, importSave } from '../career/backup';
 import { generateMission, type Mission } from '../game/mission';
 import type { SessionResult } from '../game/flightSession';
 
@@ -202,14 +203,91 @@ export class CareerUI {
         <button data-act="fly" class="primary">FLY NEXT MISSION</button>
         <button data-act="shop">LEGACY · ${availableLegacy(d)} PTS</button>
         <button data-act="chronicle">CHRONICLE</button>
+        <button data-act="backup">SAVE CODE</button>
         <button data-act="exit">MAIN MENU</button>
       </div>`;
     this.bind();
+    this.drawWarMap(getCampaign(this.era, p.side));
+  }
+
+  /** The theater, drawn: shaded sides, a wobbling front line, the war's places. */
+  private drawWarMap(c: Campaign): void {
+    const canvas = this.root.querySelector('.war-map') as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d')!;
+    const w = canvas.width, h = canvas.height;
+    const wwi = this.era === 'wwi';
+
+    // Ground
+    ctx.fillStyle = wwi ? '#4a5236' : '#8a744e';
+    ctx.fillRect(0, 0, w, h);
+    // terrain speckle, deterministic
+    for (let i = 0; i < 240; i++) {
+      const x = ((i * 127.1) % 1) * 0 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * w;
+      const y = ((Math.sin(i * 78.233) * 12543.123) % 1 + 1) % 1 * h;
+      ctx.fillStyle = wwi ? 'rgba(30,36,20,0.35)' : 'rgba(60,48,30,0.3)';
+      ctx.fillRect(x, y, 2.2, 2.2);
+    }
+
+    // Front line: +100 (victory) pushes it to the far left.
+    const lineX = w * (0.5 - (c.front / 200) * 0.9);
+    // Enemy side wash (left), friendly side wash (right)
+    ctx.fillStyle = 'rgba(160,40,30,0.18)';
+    ctx.fillRect(0, 0, lineX, h);
+    ctx.fillStyle = wwi ? 'rgba(90,110,60,0.15)' : 'rgba(60,110,160,0.14)';
+    ctx.fillRect(lineX, 0, w - lineX, h);
+
+    // The line itself, wobbling like a real front
+    ctx.strokeStyle = wwi ? '#e0d6b0' : '#ffd98a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let y = 0; y <= h; y += 6) {
+      const x = lineX + Math.sin(y * 0.09 + c.missionsFlown) * 9 + Math.sin(y * 0.031) * 14;
+      if (y === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    if (wwi) {
+      // trench hatching either side of the line
+      ctx.strokeStyle = 'rgba(30,30,24,0.5)';
+      ctx.lineWidth = 1;
+      for (const off of [-14, 14]) {
+        ctx.beginPath();
+        for (let y = 0; y <= h; y += 6) {
+          const x = lineX + off + Math.sin(y * 0.09 + c.missionsFlown) * 9 + Math.sin(y * 0.031) * 14;
+          if (y === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // Sector names scattered on each side
+    const sectors = wwi
+      ? (c.side === 'central' ? ['Ypres', 'Messines', 'the Scarpe'] : ['Arras', 'Cambrai', 'Lens'])
+      : ['Red Canyon', 'Sector Bravo', 'the Rift'];
+    ctx.font = '10px Georgia, serif';
+    ctx.fillStyle = 'rgba(240,226,196,0.55)';
+    sectors.forEach((s, i) => {
+      ctx.fillText(s, w * 0.12 + i * w * 0.3, h * (0.2 + (i % 2) * 0.55));
+    });
+
+    // Home plate, friendly edge
+    ctx.fillStyle = '#b8e6a0';
+    ctx.fillRect(w - 26, h / 2 - 3, 14, 6);
+    ctx.font = '9px Consolas, monospace';
+    ctx.fillText('HOME', w - 40, h / 2 + 16);
+
+    // Their champion prowls the enemy side
+    if (c.ace.alive) {
+      ctx.fillStyle = '#ff8a70';
+      ctx.font = '13px Georgia, serif';
+      ctx.fillText('✠', Math.max(14, lineX * 0.35), h * 0.32);
+      ctx.font = '9px Georgia, serif';
+      ctx.fillText(c.ace.name.split(' ').pop() ?? '', Math.max(6, lineX * 0.35 - 12), h * 0.32 + 13);
+    }
   }
 
   /** The war around you: front-line meter, squadron roster, aircraft pool. */
   private buildWarPanel(c: Campaign): string {
-    const pct = (c.front + 100) / 2; // -100..100 -> 0..100
     const roster = c.roster.map(pl =>
       `<span class="roster-pilot ${pl.status === 'kia' ? 'kia' : ''}">${pl.name}${pl.kills > 0 ? ` (${pl.kills})` : ''}</span>`
     ).join('');
@@ -224,14 +302,52 @@ export class CareerUI {
         <div class="war-line">${warStatusLine(c)}</div>
         ${aceLine}
         ${trophies}
-        <div class="front-bar"><div class="front-fill" style="width:${pct}%"></div><div class="front-mid"></div></div>
+        <canvas class="war-map" width="520" height="190"></canvas>
         <div class="war-meta">
-          <span>DEFEAT</span>
+          <span>THEIR GROUND</span>
           <span>${c.aircraft} aircraft · mission ${c.missionsFlown + 1}</span>
-          <span>VICTORY</span>
+          <span>OURS</span>
         </div>
         <div class="roster">${roster}</div>
       </div>`;
+  }
+
+  /** Backup codes: the dynasty packed into copyable text, and back. */
+  private showBackup(): void {
+    const code = exportSave();
+    this.root.innerHTML = `
+      <h2 class="career-h">DYNASTY SAVE CODE</h2>
+      <p class="career-sub">Your whole family history lives in this browser. Copy this code somewhere
+        safe — paste it back on any device to restore the dynasty, campaigns, and unlocks.</p>
+      <textarea class="save-code" readonly>${code}</textarea>
+      <div class="career-actions"><button data-act="copy-code" class="primary">COPY CODE</button></div>
+      <p class="career-sub">Restore from a code:</p>
+      <textarea class="save-code restore" placeholder="Paste a JETS save code here..."></textarea>
+      <div class="save-msg"></div>
+      <div class="career-actions">
+        <button data-act="restore-code">RESTORE</button>
+        <button data-act="home">BACK</button>
+      </div>`;
+    const msg = this.root.querySelector('.save-msg') as HTMLElement;
+    this.root.querySelector('button[data-act="copy-code"]')?.addEventListener('click', () => {
+      void navigator.clipboard?.writeText(code).catch(() => undefined);
+      msg.textContent = 'Copied to clipboard.';
+      msg.className = 'save-msg ok';
+    });
+    this.root.querySelector('button[data-act="restore-code"]')?.addEventListener('click', () => {
+      const input = (this.root.querySelector('.save-code.restore') as HTMLTextAreaElement).value;
+      const err = importSave(input);
+      if (err) {
+        msg.textContent = err;
+        msg.className = 'save-msg bad';
+      } else {
+        this.dynasty = loadDynasty();
+        msg.textContent = 'Restored. Welcome back.';
+        msg.className = 'save-msg ok';
+        setTimeout(() => this.showHome(), 900);
+      }
+    });
+    this.bind();
   }
 
   /** The family history: every pilot, every sortie that made a line. */
@@ -411,6 +527,7 @@ export class CareerUI {
         else if (act === 'home') this.showHome();
         else if (act === 'shop') this.showShop();
         else if (act === 'chronicle') this.showChronicle();
+        else if (act === 'backup') this.showBackup();
         else if (act === 'fly') this.showBriefing();
         else if (act === 'takeoff' && this.pendingMission) {
           const p = activePilot(this.dynasty!, this.era)!;

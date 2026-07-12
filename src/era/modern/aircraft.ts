@@ -118,6 +118,27 @@ export const F14: AircraftSpec = {
   cruiseSpeedMs: 210
 };
 
+/** AI only (for now): the Flanker — bigger, faster, and better armed than
+ * the Fulcrum. When one shows on the scope, respect it. */
+export const SU27: AircraftSpec = {
+  ...F16,
+  id: 'su27',
+  name: 'Su-27 Flanker',
+  massKg: 23000,
+  inertia: { pitch: 230000, yaw: 270000, roll: 52000 },
+  wingAreaM2: 62,
+  wingSpanM: 14.7,
+  chordM: 4.6,
+  aspectRatio: 3.5,
+  cd0: 0.019,
+  clMax: 1.7,
+  alphaStallRad: 0.52,
+  fbw: { alphaLimitRad: 0.5, gLimit: 9 },
+  brakeDrag: 0.05,
+  propulsion: { kind: 'jet', milThrustN: 150000, abThrustN: 245000 },
+  cruiseSpeedMs: 200
+};
+
 /** AI only: the raid bomber — fast in a straight line, helpless in a turn. */
 export const BACKFIRE: AircraftSpec = {
   ...F16,
