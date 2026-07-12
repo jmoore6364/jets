@@ -21,13 +21,25 @@ body.in-menu #scene { filter: brightness(0.35); }
 
 .menu {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
+  /* Center when it fits, scroll when it doesn't: auto margins on the first
+     and last child absorb free space; justify-content stays flex-start so
+     overflowing content is reachable from the top. */
+  justify-content: flex-start;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   gap: 1.4rem;
+  padding: 1.2rem 0.8rem;
   background: radial-gradient(ellipse at center, rgba(10,16,28,0.55), rgba(4,7,12,0.92));
   color: #dfe6ee;
   font-family: 'Segoe UI', system-ui, sans-serif;
   text-align: center;
 }
+.menu::before, .menu::after { content: ''; flex: 0 0 0; }
+.menu::before { margin-bottom: auto; }
+.menu::after { margin-top: auto; }
 .menu h1 {
   font-size: clamp(2.4rem, 7vw, 4.6rem);
   letter-spacing: 0.35em; font-weight: 200;
